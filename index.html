@@ -1,0 +1,1575 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrainControl — JSR Sistemas</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{--bg:#f5f4f0;--surface:#fff;--surface2:#f0efe9;--border:#e0ddd4;--border2:#c8c5ba;--text:#1a1a18;--text2:#6b6a65;--text3:#9b9a95;--blue:#185fa5;--blue-bg:#e6f1fb;--blue-t:#0c447c;--green:#3b6d11;--green-bg:#eaf3de;--green-t:#27500a;--amber:#854f0b;--amber-bg:#faeeda;--amber-t:#633806;--red:#a32d2d;--red-bg:#fcebeb;--red-t:#791f1f;--gray-t:#444441;--gray-bg:#f1efe8;--r:8px;--rl:12px;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+button{cursor:pointer;font-family:inherit;}
+input,select,textarea{font-family:inherit;}
+::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
+#login-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:40px 36px;width:100%;max-width:400px;box-shadow:0 4px 32px rgba(0,0,0,.08);}
+#login-err{background:var(--red-bg);color:var(--red-t);border-radius:var(--r);padding:10px 13px;font-size:13px;margin-bottom:16px;display:none;}
+#app-screen{display:none;min-height:100vh;}
+#app-inner{display:flex;min-height:100vh;}
+#sidebar{width:210px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;flex-shrink:0;transition:transform .25s ease;}
+#content{flex:1;padding:24px 28px;overflow-x:auto;min-width:0;}
+#mob-bar{display:none;position:sticky;top:0;z-index:90;background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;align-items:center;justify-content:space-between;}
+#mob-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:95;}
+@media(max-width:700px){
+  #sidebar{position:fixed;top:0;left:0;height:100vh;z-index:100;transform:translateX(-100%);width:230px;box-shadow:4px 0 24px rgba(0,0,0,.15);}
+  #sidebar.open{transform:translateX(0);}
+  #mob-bar{display:flex;}
+  #mob-overlay.open{display:block;}
+  #app-screen{overflow-x:auto;}
+  #app-inner{min-width:0;width:100%;}
+  #content{padding:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;min-width:0;width:100%;}
+  .dash-proc-row{grid-template-columns:1.5fr 0.8fr 1fr 1fr 1.2fr 90px;font-size:11px;}
+  .tbl{min-width:600px;}
+  .tbl th,.tbl td{padding:7px 9px;font-size:12px;}
+  .ph{margin-bottom:14px;}
+  .ph h2{font-size:17px;}
+  .stat{min-width:90px;padding:10px 12px;}
+  .day-card{min-width:0;}
+}
+#sync-bar{position:fixed;bottom:16px;right:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:8px 14px;font-size:12px;display:none;align-items:center;gap:8px;box-shadow:0 2px 12px rgba(0,0,0,.1);z-index:50;}
+#sync-bar.syncing{color:var(--amber);}
+#sync-bar.synced{color:var(--green);}
+#sync-bar.error{color:var(--red);}
+.sdot{width:7px;height:7px;border-radius:50%;background:currentColor;flex-shrink:0;}
+.nb{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r);color:var(--text2);font-size:13px;cursor:pointer;width:100%;text-align:left;border:none;background:transparent;transition:background .1s;}
+.nb:hover{background:var(--surface2);color:var(--text);}
+.nb.act{background:var(--blue-bg);color:var(--blue-t);font-weight:500;}
+.badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap;}
+.bi{background:var(--blue-bg);color:var(--blue-t);}
+.bs{background:var(--green-bg);color:var(--green-t);}
+.bd{background:var(--red-bg);color:var(--red-t);}
+.bw{background:var(--amber-bg);color:var(--amber-t);}
+.bgr{background:var(--gray-bg);color:var(--gray-t);}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);}
+.stat{background:var(--surface2);border-radius:var(--r);padding:14px 16px;flex:1;min-width:110px;}
+.lbl{font-size:12px;color:var(--text2);font-weight:500;display:block;margin-bottom:5px;}
+.inp{width:100%;padding:8px 11px;border:1px solid var(--border2);border-radius:var(--r);background:var(--surface);color:var(--text);font-size:13px;}
+.inp:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(24,95,165,.12);}
+.btn{padding:7px 16px;border-radius:var(--r);border:1px solid var(--border2);background:transparent;color:var(--text);font-size:13px;cursor:pointer;transition:background .1s;}
+.btn:hover{background:var(--surface2);}
+.btn-p{background:var(--text);color:var(--surface);border-color:transparent;}
+.btn-p:hover{opacity:.85;background:var(--text);}
+.btn-s{background:var(--green-bg);color:var(--green-t);border-color:transparent;}
+.btn-d{background:var(--red-bg);color:var(--red-t);border-color:transparent;}
+.btn-w{background:var(--amber-bg);color:var(--amber-t);border-color:transparent;}
+.btn-i{background:var(--blue-bg);color:var(--blue-t);border-color:transparent;}
+.btn-sm{padding:3px 9px;font-size:11px;}
+.pt{height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin:4px 0;}
+.pf{height:100%;border-radius:3px;transition:width .5s;}
+.av{border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:500;flex-shrink:0;}
+.day-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);margin-bottom:10px;}
+.proc-row{padding:9px 14px;display:flex;align-items:flex-start;gap:10px;transition:background .1s;border-bottom:1px solid var(--border);}
+.proc-row:last-child{border-bottom:none;}
+.proc-row:hover{background:var(--surface2);}
+.proc-row.dragging{opacity:.35;background:var(--surface2);}
+.proc-row.drag-over{border-top:2px solid var(--blue);}
+.drag-handle{cursor:grab;color:var(--text3);font-size:16px;padding:2px 4px;flex-shrink:0;user-select:none;line-height:1;}
+.drag-handle:active{cursor:grabbing;}
+.tbl{width:100%;border-collapse:collapse;}
+.tbl th{padding:9px 14px;text-align:left;font-size:11px;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap;background:var(--surface2);}
+.tbl td{padding:10px 14px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:top;}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl tbody tr:hover td{background:var(--surface2);}
+.tt-wrap{overflow-x:auto;}
+.tt-grid{display:grid;border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;}
+.tt-hc{padding:9px 10px;text-align:center;font-size:11px;font-weight:500;color:var(--text2);background:var(--surface2);border-right:1px solid var(--border);border-bottom:1px solid var(--border);}
+.tt-label{padding:10px 12px;font-size:12px;font-weight:500;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;gap:8px;}
+.tt-slot{border-right:1px solid var(--border);border-bottom:1px solid var(--border);min-height:56px;padding:3px;}
+.tt-block{border-radius:5px;padding:4px 6px;font-size:10px;font-weight:500;line-height:1.4;margin-bottom:2px;}
+#ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:flex-start;justify-content:center;padding:30px 16px;overflow-y:auto;}
+#ov.open{display:flex;}
+#mb{background:var(--surface);border-radius:var(--rl);border:1px solid var(--border);width:100%;max-width:560px;box-shadow:0 8px 40px rgba(0,0,0,.15);}
+.ph{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:12px;flex-wrap:wrap;}
+.ph h2{font-size:20px;font-weight:500;}
+.ph p{color:var(--text2);font-size:13px;margin-top:3px;}
+.dash-proc-row{display:grid;grid-template-columns:2fr 1fr 1.2fr 1.2fr 1.5fr 110px;gap:0;border-bottom:1px solid var(--border);}
+.dash-proc-row:last-child{border-bottom:none;}
+.dash-proc-row>div{padding:8px 12px;font-size:12px;display:flex;align-items:center;}
+.dash-proc-row:hover>div{background:var(--surface2);}
+.dash-head{background:var(--surface2);font-size:10px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;}
+</style>
+</head>
+<body>
+<div id="login-screen">
+  <div id="login-box">
+    <div style="font-size:9px;letter-spacing:2.5px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">TrainControl · JSR Sistemas</div>
+    <h1 style="font-size:24px;font-weight:500;margin-bottom:4px;">Bem-vindo</h1>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:28px;">Faça login para acessar o painel</p>
+    <div id="login-err"></div>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">E-mail</label><input class="inp" type="email" id="email" placeholder="seu@email.com"></div>
+      <div><label class="lbl">Senha</label><input class="inp" type="password" id="senha" placeholder="••••••••"></div>
+      <button class="btn btn-p" id="btn-login" style="width:100%;padding:11px;font-size:14px;margin-top:4px;">Entrar</button>
+    </div>
+    <p style="font-size:11px;color:var(--text3);text-align:center;margin-top:20px;">Acesso restrito · TrainControl JSR</p>
+  </div>
+</div>
+<div id="app-screen">
+  <!-- Barra mobile -->
+  <div id="mob-bar">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button id="mob-menu-btn" style="background:transparent;border:none;font-size:20px;cursor:pointer;padding:4px;color:var(--text);" onclick="toggleSidebar()">☰</button>
+      <div><div style="font-size:9px;letter-spacing:2px;color:var(--text2);text-transform:uppercase;">TrainControl</div><div id="mob-view-title" style="font-size:13px;font-weight:500;">Dashboard</div></div>
+    </div>
+    <div id="mob-user" style="font-size:12px;color:var(--text2);"></div>
+  </div>
+  <!-- Overlay escuro ao abrir menu mobile -->
+  <div id="mob-overlay" onclick="closeSidebar()"></div>
+  <div id="app-inner">
+    <aside id="sidebar"></aside>
+    <main id="content"></main>
+  </div>
+</div>
+<div id="sync-bar"><div class="sdot"></div><span id="sync-txt">Sincronizado</span></div>
+<div id="ov"><div id="mb"></div></div>
+
+<!-- TELA DE CONFIRMAÇÃO PÚBLICA -->
+<div id="confirm-screen" style="display:none;min-height:100vh;background:var(--bg);align-items:center;justify-content:center;padding:24px;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:36px 32px;width:100%;max-width:460px;box-shadow:0 4px 32px rgba(0,0,0,.08);">
+    <div style="text-align:center;margin-bottom:20px;">
+      <div style="font-size:9px;letter-spacing:2.5px;color:var(--text2);text-transform:uppercase;margin-bottom:10px;">TrainControl · JSR Sistemas</div>
+      <div style="font-size:36px;margin-bottom:10px;">📋</div>
+      <h1 id="conf-title" style="font-size:20px;font-weight:500;margin-bottom:6px;">Confirmação de treinamento</h1>
+    </div>
+    <div id="conf-info" style="background:var(--surface2);border-radius:var(--r);padding:14px;margin-bottom:20px;font-size:13px;color:var(--text2);line-height:1.7;"></div>
+    <div id="conf-loading" style="text-align:center;color:var(--text2);font-size:13px;padding:20px 0;">Carregando dados do treinamento...</div>
+    <div id="conf-form" style="display:none;flex-direction:column;gap:12px;">
+      <div style="background:var(--amber-bg);border-radius:var(--r);padding:12px;font-size:12px;color:var(--amber-t);line-height:1.6;">
+        <strong>Ao confirmar</strong>, você declara que participou deste treinamento e está apto a replicar o conteúdo aprendido.
+      </div>
+      <div><label class="lbl">Seu nome completo</label><input class="inp" id="conf-name" placeholder="Ex: Maria Silva" style="font-size:15px;padding:12px;"></div>
+      <div><label class="lbl">Sua função / cargo (opcional)</label><input class="inp" id="conf-role" placeholder="Ex: Replicador — Recebimento Central"></div>
+      <button class="btn btn-p" id="conf-btn" style="padding:13px;font-size:15px;margin-top:4px;">✓ Confirmo minha participação e capacitação</button>
+      <p style="font-size:11px;color:var(--text3);text-align:center;">Sua confirmação ficará registrada com data e hora no sistema JSR.</p>
+    </div>
+    <div id="conf-success" style="display:none;text-align:center;padding:10px 0;">
+      <div style="font-size:56px;margin-bottom:14px;">✅</div>
+      <h2 style="font-size:20px;font-weight:500;color:var(--green-t);margin-bottom:8px;">Participação confirmada!</h2>
+      <p id="conf-success-name" style="font-size:14px;color:var(--text2);margin-bottom:6px;"></p>
+      <p style="font-size:12px;color:var(--text3);">Registrado em <span id="conf-success-time"></span></p>
+    </div>
+    <div id="conf-error" style="display:none;text-align:center;padding:10px 0;">
+      <div style="font-size:48px;margin-bottom:12px;">❌</div>
+      <p style="font-size:14px;color:var(--red-t);">Link inválido ou expirado.</p>
+      <p style="font-size:12px;color:var(--text2);margin-top:6px;">Peça ao consultor um novo link de confirmação.</p>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getDatabase, ref, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDZgbbRG1pIctrTqspyv5M9PHNSh281WD4",
+  authDomain: "implantationjsr.firebaseapp.com",
+  databaseURL: "https://implantationjsr-default-rtdb.firebaseio.com",
+  projectId: "implantationjsr",
+  storageBucket: "implantationjsr.firebasestorage.app",
+  messagingSenderId: "302754352534",
+  appId: "1:302754352534:web:457e5b99e408dbc16de1b7"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+
+// ── VERIFICAR SE É LINK DE CONFIRMAÇÃO ───────────────────────────────────
+// Detecta ANTES de tudo se a URL é um link de confirmação público
+const _params = new URLSearchParams(window.location.search);
+const IS_CONFIRM_LINK = !!(_params.get('session') || _params.get('confirm')) && !!(_params.get('rep') || _params.get('proc'));
+
+if(IS_CONFIRM_LINK){
+  // Esconde login imediatamente, antes mesmo do Firebase inicializar
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('confirm-screen').style.display = 'flex';
+}
+
+(function checkConfirmLink(){
+  if(!IS_CONFIRM_LINK) return;
+
+  // Lê os parâmetros da URL
+  const sid = _params.get('session') || _params.get('confirm');
+  const repName = _params.get('rep');
+  const pidsCsv = _params.get('pids');
+  const oldPid = _params.get('proc');
+
+  const DB_URL = 'https://implantationjsr-default-rtdb.firebaseio.com';
+  async function dbGet(path){ const r=await fetch(`${DB_URL}${path}.json`); return r.ok?r.json():null; }
+  async function dbPut(path,data){ const r=await fetch(`${DB_URL}${path}.json`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); return r.ok; }
+
+  function showEl(id,mode='block'){ const el=document.getElementById(id);if(el)el.style.display=mode; }
+  function hideEl(id){ const el=document.getElementById(id);if(el)el.style.display='none'; }
+
+  async function loadConfirmInfo(){
+    const repLabel = repName ? decodeURIComponent(repName) : '';
+    let processesToConfirm = [];
+    let sessionLabel = '', dateStr = '', clientName = '';
+
+    // Tenta ler dados públicos do confirmation_data (mais seguro, não expõe sessions)
+    if(repLabel && sid){
+      const tokenKey = `${sid}_${repLabel.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'')}`;
+      const confData = await dbGet(`/confirmation_data/${tokenKey}`);
+      if(confData){
+        sessionLabel = confData.sessionLabel||'';
+        dateStr = confData.sessionDate||'';
+        clientName = confData.clientName||'';
+        processesToConfirm = confData.processes||[];
+      }
+    }
+
+    // Fallback: lê sessions diretamente (compatibilidade)
+    if(!processesToConfirm.length){
+      const s = await dbGet(`/sessions/${sid}`);
+      if(!s){ showEl('conf-error'); hideEl('conf-loading'); return; }
+      const c = s.clientId ? await dbGet(`/clients/${s.clientId}`) : null;
+      dateStr = s.date ? new Date(s.date+'T00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}) : '';
+      sessionLabel = s.label||'';
+      clientName = c?.name||'';
+      if(repName && pidsCsv){
+        const pids = decodeURIComponent(pidsCsv).split(',');
+        pids.forEach(pid=>{ const p=s.processes?.[pid]; if(p) processesToConfirm.push({id:pid,...p}); });
+      } else if(oldPid){
+        const p = s.processes?.[oldPid];
+        if(p) processesToConfirm.push({id:oldPid,...p});
+      }
+    }
+
+    if(!processesToConfirm.length){ showEl('conf-error'); hideEl('conf-loading'); return; }
+
+    document.getElementById('conf-title').textContent = repLabel ? `Olá, ${repLabel}!` : 'Confirmar treinamentos';
+    document.getElementById('conf-info').innerHTML = `
+      <div style="margin-bottom:8px;font-size:12px;font-weight:500;color:var(--text);">📅 ${sessionLabel}${dateStr?' — '+dateStr:''}</div>
+      ${clientName?`<div style="font-size:12px;color:var(--text2);margin-bottom:8px;">🏢 ${clientName}</div>`:''}
+      <div style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:5px;">Treinamentos do dia (${processesToConfirm.length}):</div>
+      ${processesToConfirm.map((p,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;">
+        <span style="color:var(--text2);min-width:16px;">${i+1}.</span>
+        <span style="flex:1;font-weight:500;">${p.name}</span>
+        <span style="color:var(--text2);font-size:11px;">${p.startTime||''}${p.endTime?'–'+p.endTime:''}</span>
+      </div>`).join('')}
+    `;
+
+    hideEl('conf-loading');
+    showEl('conf-form','flex');
+
+    const nameInput = document.getElementById('conf-name');
+    if(repLabel) nameInput.value = repLabel;
+
+    document.getElementById('conf-btn').onclick = async () => {
+      const name = nameInput.value.trim();
+      const role = document.getElementById('conf-role').value.trim();
+      if(!name){ alert('Por favor, confirme seu nome.'); return; }
+      const btn = document.getElementById('conf-btn');
+      btn.textContent = 'Registrando...'; btn.disabled = true;
+      const now = new Date();
+      const key = gi ? gi() : Date.now().toString(36);
+      const pids = processesToConfirm.map(p=>p.id);
+      const ok = await dbPut(`/repconfirmations/${sid}/${key}`, {
+        repName: name, role, confirmedAt: now.toISOString(),
+        confirmedAtBR: now.toLocaleString('pt-BR'),
+        processIds: pids, processCount: pids.length
+      });
+      if(ok){
+        document.getElementById('conf-success-name').textContent = `${name}${role?' · '+role:''}`;
+        document.getElementById('conf-success-time').textContent = now.toLocaleString('pt-BR');
+        hideEl('conf-form'); showEl('conf-success');
+      } else {
+        alert('Erro ao registrar. Verifique sua conexão e tente novamente.');
+        btn.textContent = '✓ Confirmo minha participação e capacitação';
+        btn.disabled = false;
+      }
+    };
+  }
+
+  loadConfirmInfo().catch(()=>{ showEl('conf-error'); hideEl('conf-loading'); });
+})();
+
+// ── CATÁLOGO PADRÃO ───────────────────────────────────────────────────────
+const CATALOG_DEFAULT = [
+  "Instalação do sistema nas maquinas","Configuração do servidor","Instalação dos Certificados",
+  "Apresentação do sistema","Cadastro de Familia / Marca","Cadastro de produto","Consulta de produto",
+  "Consulta de produto modulo Web","Cadastro de usuarios (perfil administrativo) e senha",
+  "Precificação de produto","Emissão de etiqueta","Carga de produto","Pasta de promoção",
+  "Carga Promocional","Emissão de etiqueta de promoção","Pasta de promoção condicional",
+  "Relatorio de consulta de preços alterados","Relatorio de consulta de preços data Vigor",
+  "Aprovação de preço (parametro-explicação)","Aprovação pasta de promoção (parametro-explicação)",
+  "Cadastro de atributo fixo","Recebimento Manifesto","Recebimento Lançamento XML",
+  "Recebimento Manutenção","Recebimento Conferencia da carga",
+  "Recebimento Manutenção desintegrar e arrumar nota","Recebimento Abatimento Bonificação",
+  "Consulta Recebimento","Recebimento Kit","Recebimento com conferencia do pedido",
+  "Extração XML NF-e Recebimento","Cadastro de pessoa","Cadastro de fornecedor/fabricante",
+  "Associação de produto ao fabricante","Importação da planilha de pedido para o comercial",
+  "Importação da planilha de custo do fornecedor","Aprovação de preço recebimento",
+  "Conferencia cega (EQUIPE LOJA)","Montagem dos kits","Revisão dia anterior",
+  "Coleta de produtos para emissão de NF-e OE","Emissão de NF-e para transferencia OE",
+  "Ajuste de estoque","Consulta estoque de trocas","Emissão de NF-e de devolução do fornecedor",
+  "Manutenção de familia agrupamento","Ecommerce Inclusão de itens",
+  "Cadastro de vendedores","Cadastro de Compradores","Cadastro de operadores de caixa",
+  "Todos os tipos de carga","Coleta de dados","Transferencia entre locais",
+  "Movimentação de estoque","Consulta movimentação interna","Consulta validade","Fechamento de caixa"
+];
+
+// ── HELPERS ───────────────────────────────────────────────────────────────
+const gi = () => Math.random().toString(36).slice(2,8);
+const AVC = ['#3B82F6','#10B981','#F59E0B','#8B5CF6','#EC4899','#06B6D4','#EF4444','#14B8A6'];
+const avc = n => AVC[(n||'A').charCodeAt(0)%AVC.length];
+const avi = n => (n||'?').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
+const av = (n,sz=30) => `<div class="av" style="width:${sz}px;height:${sz}px;background:${avc(n)};color:#fff;font-size:${Math.round(sz*.36)}px;">${avi(n)}</div>`;
+const fd = d => { try{return new Date(d+'T00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});}catch(e){return d||'';} };
+const fdd = d => { try{return new Date(d+'T00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});}catch(e){return d||'';} };
+const fdw = d => { try{return new Date(d+'T00:00').toLocaleDateString('pt-BR',{weekday:'short'}).toUpperCase();}catch(e){return '';} };
+const t2m = t => { const[h,m]=(t||'00:00').split(':').map(Number);return h*60+(m||0); };
+const m2t = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+const pcol = p => p>=70?'var(--green)':p>=40?'var(--amber)':'var(--blue)';
+const pb = v => `<div class="pt"><div class="pf" style="width:${v}%;background:${pcol(v)};"></div></div>`;
+const DC = ['#185fa5','#0f6e56','#854f0b','#993556','#993c1d','#534ab7','#0c6e7a','#3b6d11'];
+const dc = i => DC[i%DC.length];
+const esc = s => (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+
+const ROLES = {admin:{l:'Administrador',cls:'bw'},instrutor:{l:'Instrutor',cls:'bi'},gestor:{l:'Gestor',cls:'bs'}};
+const PSTAT = {pendente:{l:'Pendente',cls:'bi'},realizado:{l:'Realizado',cls:'bs'},video:{l:'Via vídeo',cls:'bw'},cancelado:{l:'Cancelado',cls:'bd'}};
+const MOD = {remoto:{l:'Remoto',cls:'bgr'},presencial:{l:'Presencial',cls:'bs'}};
+
+// ── STATE ─────────────────────────────────────────────────────────────────
+let S = {view:'dashboard',exp:null,ttDay:null,fC:'',fS:''};
+let D = {users:{},clients:{},sessions:{},catalog:{}};
+let currentUser = null;
+let currentProfile = null;
+
+// ── SYNC ──────────────────────────────────────────────────────────────────
+let syncTimer;
+function showSync(state,msg){
+  const el=document.getElementById('sync-bar');
+  el.style.display='flex';el.className=state;
+  document.getElementById('sync-txt').textContent=msg;
+  clearTimeout(syncTimer);
+  if(state==='synced'){syncTimer=setTimeout(()=>el.style.display='none',2500);}
+}
+async function fbSet(path,data){showSync('syncing','Salvando...');try{await set(ref(db,path),data);showSync('synced','Salvo ✓');}catch(e){showSync('error','Erro ao salvar');console.error(e);}}
+async function fbUpdate(path,data){showSync('syncing','Salvando...');try{await update(ref(db,path),data);showSync('synced','Salvo ✓');}catch(e){showSync('error','Erro ao salvar');}}
+async function fbRemove(path){showSync('syncing','Removendo...');try{await remove(ref(db,path));showSync('synced','Removido ✓');}catch(e){showSync('error','Erro');}}
+
+// ── SEED CATALOG ──────────────────────────────────────────────────────────
+async function seedCatalogIfEmpty(){
+  if(Object.keys(D.catalog||{}).length===0){
+    const batch={};
+    CATALOG_DEFAULT.forEach(name=>{const id=gi();batch[id]={id,name,duration:2,obs:''};});
+    await fbSet('/catalog',batch);
+  }
+}
+
+// ── ACCESSORS ─────────────────────────────────────────────────────────────
+const gc = id => D.clients[id];
+const gu = id => D.users[id];
+const myS = () => {
+  const p=currentProfile;if(!p)return[];
+  const ss=Object.values(D.sessions||{});
+  if(p.role==='admin')return ss;
+  if(p.role==='instrutor')return ss.filter(s=>Object.values(s.processes||{}).some(proc=>proc.trainerId===currentUser.uid));
+  return ss.filter(s=>(p.clientIds||{})[s.clientId]);
+};
+const myC = () => {
+  const p=currentProfile;if(!p)return[];
+  const cs=Object.values(D.clients||{});
+  if(p.role==='admin')return cs;
+  return cs.filter(c=>(p.clientIds||{})[c.id]);
+};
+
+// ── LOGIN ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-login').addEventListener('click',doLogin);
+document.getElementById('senha').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+async function doLogin(){
+  const email=document.getElementById('email').value.trim();
+  const senha=document.getElementById('senha').value;
+  const errEl=document.getElementById('login-err');
+  const btn=document.getElementById('btn-login');
+  errEl.style.display='none';
+  if(!email||!senha){errEl.textContent='Preencha e-mail e senha.';errEl.style.display='block';return;}
+  btn.textContent='Entrando...';btn.disabled=true;
+  try{await signInWithEmailAndPassword(auth,email,senha);}
+  catch(e){
+    let msg='E-mail ou senha incorretos.';
+    if(e.code==='auth/too-many-requests')msg='Muitas tentativas. Aguarde alguns minutos.';
+    errEl.textContent=msg;errEl.style.display='block';
+    btn.textContent='Entrar';btn.disabled=false;
+  }
+}
+
+// ── AUTH STATE ────────────────────────────────────────────────────────────
+let unsubDB = null;
+
+onAuthStateChanged(auth, user => {
+  // Link de confirmação pública — não precisa de autenticação, ignora tudo
+  if(IS_CONFIRM_LINK) return;
+
+  if (unsubDB) { unsubDB(); unsubDB = null; }
+
+  if (user) {
+    currentUser = user;
+    // Cria novo listener exclusivo para este usuário
+    unsubDB = onValue(ref(db, '/'), snap => {
+      // Verifica se ainda é o mesmo usuário logado (evita race condition)
+      if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+      D = snap.val() || {};
+      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{};
+      currentProfile = D.users[user.uid];
+      if (!currentProfile) {
+        if (Object.keys(D.users).length === 0) {
+          currentProfile = {uid:user.uid, name:user.email.split('@')[0], email:user.email, role:'admin', clientIds:{}};
+          fbSet(`/users/${user.uid}`, currentProfile).then(() => seedCatalogIfEmpty());
+        } else {
+          // Usuário não tem perfil cadastrado — bloqueia acesso
+          if (unsubDB) { unsubDB(); unsubDB = null; }
+          signOut(auth);
+          document.getElementById('login-screen').style.display = 'flex';
+          document.getElementById('app-screen').style.display = 'none';
+          const errEl = document.getElementById('login-err');
+          errEl.textContent = 'Usuário sem perfil cadastrado. Contate o administrador.';
+          errEl.style.display = 'block';
+          document.getElementById('btn-login').textContent = 'Entrar';
+          document.getElementById('btn-login').disabled = false;
+          return;
+        }
+      } else {
+        seedCatalogIfEmpty();
+      }
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app-screen').style.display = 'block';
+      document.getElementById('sync-bar').style.display = 'flex';
+      render();
+    });
+  } else {
+    // Se for link de confirmação pública, não mostra tela de login
+    if(IS_CONFIRM_LINK) return;
+    currentUser = null; currentProfile = null;
+    D = {users:{}, clients:{}, sessions:{}, catalog:{}};
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app-screen').style.display = 'none';
+    document.getElementById('sync-bar').style.display = 'none';
+    document.getElementById('btn-login').textContent = 'Entrar';
+    document.getElementById('btn-login').disabled = false;
+    // Limpa campos de login
+    document.getElementById('email').value = '';
+    document.getElementById('senha').value = '';
+  }
+});
+
+// ── SIDEBAR ───────────────────────────────────────────────────────────────
+function renderSidebar(){
+  const p=currentProfile;if(!p)return;
+  const nav=[
+    {id:'dashboard',ic:'⬛',l:'Dashboard'},
+    {id:'cronograma',ic:'☰',l:'Cronograma'},
+    {id:'horarios',ic:'◷',l:'Grade de horários'},
+  ];
+  if(p.role==='admin'||p.role==='instrutor')nav.push({id:'catalogo',ic:'☷',l:'Catálogo'});
+  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'admin',ic:'⚙',l:'Usuários'});}
+  // Atualiza título na barra mobile
+  const cur=nav.find(n=>n.id===S.view);
+  const mobTitle=document.getElementById('mob-view-title');
+  const mobUser=document.getElementById('mob-user');
+  if(mobTitle)mobTitle.textContent=cur?.l||'';
+  if(mobUser)mobUser.textContent=(p.name||p.email).split(' ')[0];
+  document.getElementById('sidebar').innerHTML=`
+    <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <div><div style="font-size:9px;letter-spacing:2.5px;color:var(--text2);text-transform:uppercase;margin-bottom:2px;">TrainControl</div><div style="font-size:11px;color:var(--text3);">JSR Sistemas</div></div>
+      <button onclick="closeSidebar()" style="background:transparent;border:none;font-size:18px;color:var(--text2);cursor:pointer;display:none;" id="sb-close-btn">✕</button>
+    </div>
+    <nav style="flex:1;padding:8px 7px;">
+      ${nav.map(n=>`<button class="nb${S.view===n.id?' act':''}" data-action="nav" data-view="${n.id}"><span style="font-size:14px;">${n.ic}</span>${n.l}</button>`).join('')}
+    </nav>
+    <div style="padding:10px 12px;border-top:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        ${av(p.name||p.email,30)}
+        <div><div style="font-size:12px;font-weight:500;">${(p.name||p.email).split(' ')[0]}</div><div style="font-size:10px;color:var(--text2);">${ROLES[p.role]?.l||p.role}</div></div>
+      </div>
+      <button class="btn btn-sm" style="width:100%;text-align:center;" data-action="logout">Sair</button>
+    </div>`;
+  // Mostra botão X dentro do sidebar no mobile
+  if(window.innerWidth<=700){const btn=document.getElementById('sb-close-btn');if(btn)btn.style.display='block';}
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────────────────
+function renderDashboard(){
+  const today=new Date().toISOString().split('T')[0];
+  const ss=myS().sort((a,b)=>a.date.localeCompare(b.date));
+  const cs=myC();
+  const allP=ss.flatMap(s=>Object.values(s.processes||{}));
+  const done=allP.filter(p=>p.status==='realizado'||p.status==='video').length;
+  const pend=allP.filter(p=>p.status==='pendente').length;
+  const pct=allP.length>0?Math.round(done/allP.length*100):0;
+  const totalH=allP.filter(p=>p.status==='realizado'||p.status==='video').reduce((a,p)=>{const st=t2m(p.startTime||'09:00');const et=t2m(p.endTime||'10:00');return a+(et-st)/60;},0);
+
+  // Próximos treinamentos (futuros com pendentes)
+  const upcoming=ss.filter(s=>s.date>=today&&Object.values(s.processes||{}).some(p=>p.status==='pendente')).slice(0,5);
+
+  // Horas por instrutor
+  const instHours={};
+  allP.filter(p=>p.status==='realizado'||p.status==='video').forEach(p=>{
+    if(!p.trainerId)return;
+    const h=(t2m(p.endTime||'10:00')-t2m(p.startTime||'09:00'))/60;
+    instHours[p.trainerId]=(instHours[p.trainerId]||0)+h;
+  });
+  const instList=Object.entries(instHours).sort((a,b)=>b[1]-a[1]);
+
+  // Progresso semanal (últimas 6 semanas)
+  const weeks=[];
+  for(let i=5;i>=0;i--){
+    const d=new Date();d.setDate(d.getDate()-i*7);
+    const wStart=new Date(d);wStart.setDate(d.getDate()-d.getDay());
+    const wEnd=new Date(wStart);wEnd.setDate(wStart.getDate()+6);
+    const ws=wStart.toISOString().split('T')[0];
+    const we=wEnd.toISOString().split('T')[0];
+    const wP=allP.filter(p=>{const s=ss.find(s=>Object.values(s.processes||{}).some(pr=>pr.id===p.id));return s&&s.date>=ws&&s.date<=we&&(p.status==='realizado'||p.status==='video');});
+    weeks.push({label:`S${6-i}`,count:wP.length,ws,we});
+  }
+  const maxWk=Math.max(...weeks.map(w=>w.count),1);
+
+  const byClient=cs.map(c=>({c,sessions:ss.filter(s=>s.clientId===c.id)})).filter(x=>x.sessions.length>0);
+
+  return `<div class="ph"><div><h2>Dashboard</h2><p>Visão geral das implantações</p></div></div>
+
+  <!-- STATS -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+    <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:5px;">Concluídos</div><div style="font-size:26px;font-weight:500;color:var(--green);">${done}</div><div style="font-size:11px;color:var(--text2);">de ${allP.length} processos</div></div>
+    <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:5px;">Pendentes</div><div style="font-size:26px;font-weight:500;color:var(--amber);">${pend}</div></div>
+    <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:5px;">Horas realizadas</div><div style="font-size:26px;font-weight:500;">${totalH.toFixed(1)}h</div></div>
+    <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:5px;">Progresso geral</div><div style="font-size:26px;font-weight:500;color:${pcol(pct)};">${pct}%</div>${pb(pct)}</div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;">
+    <!-- PRÓXIMOS TREINAMENTOS -->
+    <div class="card" style="padding:16px;">
+      <h3 style="font-size:13px;font-weight:500;margin-bottom:12px;">📅 Próximos treinamentos</h3>
+      ${upcoming.length===0?`<p style="color:var(--text2);font-size:12px;">Nenhum treinamento futuro pendente.</p>`:
+      upcoming.map(s=>{
+        const c=gc(s.clientId);
+        const pn=Object.values(s.processes||{}).filter(p=>p.status==='pendente').length;
+        const daysLeft=Math.round((new Date(s.date+'T00:00')-new Date())/86400000);
+        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--bg);border-radius:var(--r);margin-bottom:6px;">
+          <div style="text-align:center;min-width:44px;"><div style="font-size:18px;font-weight:500;color:var(--blue);">${new Date(s.date+'T00:00').getDate()}</div><div style="font-size:9px;color:var(--text2);">${new Date(s.date+'T00:00').toLocaleDateString('pt-BR',{month:'short'}).toUpperCase()}</div></div>
+          <div style="flex:1;min-width:0;"><div style="font-weight:500;font-size:12px;">${s.label} — ${c?.name||''}</div><div style="font-size:11px;color:var(--text2);margin-top:1px;">${pn} processo(s) pendente(s) · <span class="badge ${MOD[s.modality]?.cls||'bgr'}" style="font-size:9px;">${MOD[s.modality]?.l||''}</span></div></div>
+          <div style="font-size:11px;font-weight:500;color:${daysLeft<=2?'var(--red)':daysLeft<=7?'var(--amber)':'var(--text2)'};">${daysLeft===0?'Hoje':daysLeft===1?'Amanhã':daysLeft<0?'Atrasado':`${daysLeft}d`}</div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- HORAS POR INSTRUTOR -->
+    <div class="card" style="padding:16px;">
+      <h3 style="font-size:13px;font-weight:500;margin-bottom:12px;">👤 Horas por instrutor</h3>
+      ${instList.length===0?`<p style="color:var(--text2);font-size:12px;">Nenhuma hora registrada ainda.</p>`:
+      instList.map(([uid,h])=>{
+        const u=gu(uid);
+        const maxH=instList[0][1];
+        return `<div style="display:flex;align-items:center;gap:9px;margin-bottom:9px;">
+          ${av(u?.name||u?.email||'?',28)}
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;font-weight:500;margin-bottom:3px;">${u?.name||(u?.email||'').split('@')[0]}</div>
+            <div style="height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;"><div style="height:100%;width:${Math.round(h/maxH*100)}%;background:var(--blue);border-radius:3px;"></div></div>
+          </div>
+          <div style="font-size:12px;font-weight:500;color:var(--blue);min-width:36px;text-align:right;">${h.toFixed(1)}h</div>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>
+
+  <!-- PROGRESSO SEMANAL -->
+  <div class="card" style="padding:16px;margin-bottom:16px;">
+    <h3 style="font-size:13px;font-weight:500;margin-bottom:14px;">📊 Processos concluídos por semana</h3>
+    <div style="display:flex;align-items:flex-end;gap:8px;height:80px;">
+      ${weeks.map(w=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <div style="font-size:10px;color:var(--text2);">${w.count||''}</div>
+        <div style="width:100%;background:${w.count>0?'var(--blue)':'var(--surface2)'};border-radius:4px 4px 0 0;height:${w.count>0?Math.max(8,Math.round(w.count/maxWk*56)):4}px;transition:height .3s;"></div>
+        <div style="font-size:10px;color:var(--text2);">${w.label}</div>
+      </div>`).join('')}
+    </div>
+  </div>
+
+  <!-- POR CLIENTE -->
+  ${byClient.length===0?`<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhuma implantação cadastrada.<br><button class="btn btn-p" style="margin-top:12px;" data-action="nav" data-view="cronograma">Criar cronograma</button></div>`:''}
+  ${byClient.map(({c,sessions})=>{
+    const cP=sessions.flatMap(s=>Object.values(s.processes||{}));
+    const cD=cP.filter(p=>p.status==='realizado'||p.status==='video').length;
+    const cPct=cP.length>0?Math.round(cD/cP.length*100):0;
+    const cH=cP.filter(p=>p.status==='realizado'||p.status==='video').reduce((a,p)=>{return a+(t2m(p.endTime||'10:00')-t2m(p.startTime||'09:00'))/60;},0);
+    return `<div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);margin-bottom:16px;overflow:hidden;">
+      <div style="padding:12px 16px;background:var(--blue-bg);display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">
+        <div><span style="font-weight:500;font-size:15px;color:var(--blue-t);">${c.name}</span><span style="font-size:12px;color:var(--blue-t);margin-left:10px;">${sessions.length} dias · ${cD}/${cP.length} processos · ${cH.toFixed(1)}h</span></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-weight:500;font-size:14px;color:${pcol(cPct)};">${cPct}%</span>
+          <button class="btn btn-sm btn-p" data-action="export-pdf" data-cid="${c.id}">📄 Exportar PDF</button>
+        </div>
+      </div>
+      ${sessions.map(s=>{
+        const procs=Object.values(s.processes||{}).sort((a,b)=>(a.order??999)-(b.order??999));
+        if(!procs.length)return'';
+        const sDone=procs.filter(p=>p.status==='realizado'||p.status==='video').length;
+        return `<div style="border-bottom:1px solid var(--border);">
+          <div style="padding:7px 14px;background:var(--surface2);display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);">
+            <span style="font-size:10px;font-weight:600;color:var(--text2);min-width:28px;">${fdw(s.date)}</span>
+            <span style="font-size:13px;font-weight:500;">${s.label}</span>
+            <span style="font-size:11px;color:var(--text2);">${fd(s.date)}</span>
+            <span class="badge ${MOD[s.modality]?.cls||'bgr'}" style="font-size:9px;">${MOD[s.modality]?.l||s.modality}</span>
+            ${s.notes?`<span style="font-size:11px;color:var(--text2);font-style:italic;">${s.notes}</span>`:''}
+            <span style="margin-left:auto;font-size:11px;color:var(--text2);">${sDone}/${procs.length}</span>
+          </div>
+          <div class="dash-proc-row dash-head">
+            <div>Processo</div><div>Horário</div><div>Departamento</div><div>Responsável</div><div>Treinandos</div><div>Status</div>
+          </div>
+          ${procs.map(proc=>{
+            const tr=gu(proc.trainerId);const dept=c.depts?.[proc.deptId];
+            return `<div class="dash-proc-row">
+              <div style="flex-direction:column;align-items:flex-start;gap:2px;">
+                <span style="font-weight:500;">${proc.name}</span>
+                ${proc.obs?`<span style="font-size:10px;color:var(--amber);font-style:italic;">${proc.obs}</span>`:''}
+              </div>
+              <div style="color:var(--text2);">${proc.startTime||'—'}–${proc.endTime||'—'}</div>
+              <div>${dept?`<span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:2px;background:${avc(dept.name)};display:inline-block;"></span>${dept.name}</span>`:'—'}</div>
+              <div>${tr?`<div style="display:flex;align-items:center;gap:5px;">${av(tr.name||tr.email,20)}<span>${(tr.name||tr.email||'').split(' ')[0]}</span></div>`:'—'}</div>
+              <div style="color:var(--text2);font-size:11px;">${proc.trainees||'—'}</div>
+              <div><span class="badge ${PSTAT[proc.status]?.cls||'bi'}">${PSTAT[proc.status]?.l||proc.status}</span></div>
+            </div>`;
+          }).join('')}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('')}`;
+}
+
+// ── CRONOGRAMA ────────────────────────────────────────────────────────────
+function renderCronograma(){
+  const p=currentProfile;
+  const isE=p?.role!=='gestor';
+  const ss=myS().sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
+  const cs=myC();
+  const filtered=ss.filter(s=>!S.fC||s.clientId===S.fC).filter(s=>!S.fS||Object.values(s.processes||{}).some(proc=>proc.status===S.fS));
+  return `<div class="ph">
+    <div><h2>Cronograma de implantação</h2><p>Dias, processos e responsáveis</p></div>
+    ${isE?`<button class="btn btn-p" data-action="open-modal" data-modal="add-day">+ Novo dia</button>`:''}
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+    <select class="inp" style="width:auto;font-size:12px;" data-action="fC">
+      <option value="">Todos os clientes</option>
+      ${cs.map(c=>`<option value="${c.id}"${S.fC===c.id?' selected':''}>${c.name}</option>`).join('')}
+    </select>
+    <select class="inp" style="width:auto;font-size:12px;" data-action="fS">
+      <option value="">Todos os status</option>
+      ${Object.entries(PSTAT).map(([k,v])=>`<option value="${k}"${S.fS===k?' selected':''}>${v.l}</option>`).join('')}
+    </select>
+  </div>
+  ${filtered.length===0?`<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum dia encontrado.${isE?` <br><button class="btn btn-p" style="margin-top:12px;" data-action="open-modal" data-modal="add-day">+ Criar primeiro dia</button>`:''}</div>`:''}
+  ${filtered.map((s,si)=>{
+    const c=gc(s.clientId);
+    const procs=Object.values(s.processes||{}).sort((a,b)=>(a.order??999)-(b.order??999));
+    const done=procs.filter(p=>p.status==='realizado'||p.status==='video').length;
+    const tot=procs.length;
+    const pct=tot>0?Math.round(done/tot*100):0;
+    const isExp=S.exp===s.id;
+    const isFirst=si===0; const isLast=si===filtered.length-1;
+    return `<div class="day-card">
+      <!-- Cabeçalho separado em duas linhas independentes -->
+      <div style="padding:12px 16px;border-bottom:0.5px solid var(--border);">
+        <!-- Linha 1: Info do dia + clique para expandir -->
+        <div data-action="exp" data-id="${s.id}" style="cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+          <div style="min-width:52px;flex-shrink:0;">
+            <div style="font-size:12px;font-weight:500;">${fd(s.date)}</div>
+            <span class="badge ${MOD[s.modality]?.cls||'bgr'}" style="margin-top:3px;font-size:9px;">${MOD[s.modality]?.l||s.modality}</span>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:500;font-size:14px;">${s.label}${s.notes?` — <span style="font-weight:400;color:var(--text2);font-size:12px;">${s.notes}</span>`:''}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px;">${c?.name||''} · ${tot} processo(s) · ${done}/${tot} concluídos · <span style="color:${pcol(pct)};font-weight:500;">${pct}%</span></div>
+          </div>
+          <span style="color:var(--text2);font-size:14px;flex-shrink:0;">${isExp?'▲':'▼'}</span>
+        </div>
+        <!-- Linha 2: Botões de ação (completamente separados) -->
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          ${pb(pct)}
+          <button class="btn btn-sm bi" data-action="goto-h" data-sid="${s.id}">📊 Grade</button>
+          ${isE?`
+            <button class="btn btn-sm btn-i" data-action="edit-day-click" data-sid="${s.id}">✎ Editar dia</button>
+            <button class="btn btn-sm" data-action="replicate-click" data-sid="${s.id}">⧉ Copiar para outro cliente</button>
+            <button class="btn btn-sm" style="padding:2px 8px;font-size:11px;${isFirst?'opacity:.3;':''}" data-action="move-day" data-sid="${s.id}" data-dir="up" ${isFirst?'disabled':''}>▲ Subir</button>
+            <button class="btn btn-sm" style="padding:2px 8px;font-size:11px;${isLast?'opacity:.3;':''}" data-action="move-day" data-sid="${s.id}" data-dir="down" ${isLast?'disabled':''}>▼ Descer</button>
+          `:''}
+        </div>
+      </div>
+      ${isExp?`<div style="border-top:1px solid var(--border);">
+        ${isE?`<div style="padding:10px 14px;display:flex;gap:6px;justify-content:flex-end;border-bottom:1px solid var(--border);background:var(--surface2);flex-wrap:wrap;">
+          <button class="btn btn-sm btn-d" data-action="rm-day" data-id="${s.id}">Remover dia</button>
+          <button class="btn btn-sm" data-action="open-modal" data-modal="add-proc-catalog" data-sid="${s.id}">+ Do catálogo</button>
+          <button class="btn btn-sm btn-p" data-action="open-modal" data-modal="add-proc" data-sid="${s.id}">+ Processo manual</button>
+          <button class="btn btn-sm" style="background:var(--green-bg);color:var(--green-t);border:1px solid var(--green-t);font-weight:500;" data-action="send-confirmations" data-sid="${s.id}" title="Gerar links por replicador">🔗 Enviar confirmações</button>
+        </div>`:''}
+        ${procs.length===0?`<p style="color:var(--text2);font-size:13px;padding:16px;">Nenhum processo. Adicione pelo catálogo ou manualmente.</p>`:''}
+        <div class="proc-list" data-drag-sid="${s.id}">
+        ${procs.map((proc,pi)=>{
+          const tr=gu(proc.trainerId);const dept=c?.depts?.[proc.deptId];
+          // Confirmações de replicadores para esta sessão
+          const repConfs=D.repconfirmations?.[s.id]||{};
+          const rep1confEntry=proc.rep1?Object.entries(repConfs).find(([k,rc])=>rc.repName===proc.rep1&&rc.processIds?.includes(proc.id)):null;
+          const rep2confEntry=proc.rep2?Object.entries(repConfs).find(([k,rc])=>rc.repName===proc.rep2&&rc.processIds?.includes(proc.id)):null;
+          const rep1conf=rep1confEntry?rep1confEntry[1]:null; const rep1key=rep1confEntry?rep1confEntry[0]:'';
+          const rep2conf=rep2confEntry?rep2confEntry[1]:null; const rep2key=rep2confEntry?rep2confEntry[0]:'';
+          const repBadge=(name,conf,key)=>{
+            if(conf){
+              const btn=isE?`<button data-action="unmark-rep" data-sid="${s.id}" data-rkey="${key}" style="border:none;background:transparent;color:var(--red-t);cursor:pointer;font-size:13px;padding:0 2px;line-height:1;margin-left:2px;" title="Remover confirmação">×</button>`:'';
+              return `<span style="font-size:11px;display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;border:1px solid var(--green-t);background:var(--green-bg);">✅ <strong>${name}</strong> <span style="color:var(--green-t);font-size:10px;">· confirmado</span>${btn}</span>`;
+            }
+            return `<span style="font-size:11px;display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;border:1px solid var(--border2);background:var(--surface2);">⏳ <strong>${name}</strong></span>`;
+          };
+          return `<div class="proc-row" draggable="${isE?'true':'false'}" data-pid="${proc.id}">
+            ${isE?`<div class="drag-handle" title="Arrastar para reordenar">⠿</div>`:''}
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="font-weight:500;font-size:13px;">${proc.name}</span>
+                <span class="badge ${PSTAT[proc.status]?.cls||'bi'}" style="font-size:10px;">${PSTAT[proc.status]?.l||proc.status}</span>
+              </div>
+              <div style="font-size:11px;color:var(--text2);margin-top:3px;">
+                ${dept?`<span style="display:inline-flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:1px;background:${avc(dept.name)};display:inline-block;"></span>${dept.name}</span>`:'Sem dept.'} ·
+                ${tr?`${tr.name||tr.email}`:' Sem responsável'} ·
+                ${proc.startTime||'?'}–${proc.endTime||'?'}
+              </div>
+              ${proc.trainees&&proc.trainees!='OK'?`<div style="font-size:11px;color:var(--text2);margin-top:1px;">👥 ${proc.trainees}</div>`:''}
+              ${proc.obs?`<div style="font-size:11px;color:var(--amber);margin-top:4px;background:var(--amber-bg);padding:4px 8px;border-radius:5px;display:inline-block;">💬 ${proc.obs}</div>`:''}
+              ${proc.rep1||proc.rep2?`<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+                ${proc.rep1?repBadge(proc.rep1,rep1conf,rep1key):''}
+                ${proc.rep2?repBadge(proc.rep2,rep2conf,rep2key):''}
+              </div>`:''}
+            </div>
+            ${isE?`<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px;">
+              ${proc.status==='pendente'?`
+                <button class="btn btn-s btn-sm" data-action="mark" data-sid="${s.id}" data-pid="${proc.id}" data-st="realizado" title="Marcar realizado">✓</button>
+                <button class="btn btn-w btn-sm" data-action="mark" data-sid="${s.id}" data-pid="${proc.id}" data-st="video" title="Via vídeo">▶</button>
+              `:''}
+              ${proc.status!=='pendente'?`<button class="btn btn-sm bgr" data-action="mark" data-sid="${s.id}" data-pid="${proc.id}" data-st="pendente" title="Voltar para pendente">↩</button>`:''}
+              <button class="btn btn-i btn-sm" data-action="open-modal" data-modal="edit-proc" data-sid="${s.id}" data-pid="${proc.id}" title="Editar">✎</button>
+              <button class="btn btn-d btn-sm" data-action="rm-proc" data-sid="${s.id}" data-pid="${proc.id}" title="Remover">×</button>
+            </div>`:''}
+          </div>`;
+        }).join('')}
+        </div>
+      </div>`:''}
+    </div>`;
+  }).join('')}`;
+}
+
+// ── GRADE DE HORÁRIOS ─────────────────────────────────────────────────────
+function renderHorarios(){
+  const ss=myS().sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
+  const selSid=S.ttDay||(ss[0]?.id||null);
+  const selS=ss.find(s=>s.id===selSid);
+  const c=selS?gc(selS.clientId):null;
+  const procs=selS?Object.values(selS.processes||{}).sort((a,b)=>{
+    const ta=t2m(a.startTime||'09:00');const tb=t2m(b.startTime||'09:00');
+    return ta-tb||(a.order??999)-(b.order??999);
+  }):[];
+  const deptIds=[...new Set(procs.map(p=>p.deptId))];
+
+  let body='';
+  if(!selS)body=`<p style="color:var(--text2);">Nenhum dia selecionado.</p>`;
+  else if(!procs.length)body=`<p style="color:var(--text2);">Dia sem processos cadastrados.</p>`;
+  else{
+    // Group by dept for legend
+    const deptColors={};
+    deptIds.forEach((id,i)=>{deptColors[id]=dc(i);});
+    body=`
+    <!-- LEGENDA -->
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+      ${deptIds.map((id,i)=>{const dept=c?.depts?.[id];return`<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;background:var(--surface);border:1px solid var(--border);border-radius:20px;font-size:11px;"><span style="width:9px;height:9px;border-radius:2px;background:${dc(i)};display:inline-block;"></span>${dept?.name||id}</span>`;}).join('')}
+    </div>
+    <!-- LISTA COMPACTA -->
+    <div class="card" style="overflow:hidden;">
+      <table class="tbl">
+        <thead><tr>
+          <th style="width:90px;">Horário</th>
+          <th>Processo</th>
+          <th style="width:150px;">Departamento</th>
+          <th style="width:130px;">Responsável</th>
+          <th>Treinandos</th>
+          <th style="width:100px;">Status</th>
+        </tr></thead>
+        <tbody>
+        ${procs.map(p=>{
+          const tr=gu(p.trainerId);
+          const dept=c?.depts?.[p.deptId];
+          const col=deptColors[p.deptId]||'var(--border2)';
+          return `<tr>
+            <td style="font-size:12px;color:var(--text2);font-weight:500;white-space:nowrap;">${p.startTime||'—'}<span style="color:var(--text3);font-size:10px;"> – ${p.endTime||'?'}</span></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:7px;">
+                <div style="width:4px;height:32px;border-radius:2px;background:${col};flex-shrink:0;"></div>
+                <div>
+                  <div style="font-weight:500;font-size:13px;">${p.name}</div>
+                  ${p.obs?`<div style="font-size:10px;color:var(--amber);font-style:italic;">${p.obs}</div>`:''}
+                </div>
+              </div>
+            </td>
+            <td style="font-size:12px;">${dept?`<span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:8px;height:8px;border-radius:2px;background:${col};display:inline-block;"></span>${dept.name}</span>`:'—'}</td>
+            <td style="font-size:12px;color:var(--text2);">${tr?`<div style="display:flex;align-items:center;gap:5px;">${av(tr.name||tr.email,22)}<span>${(tr.name||tr.email||'').split(' ')[0]}</span></div>`:'—'}</td>
+            <td style="font-size:11px;color:var(--text2);">${p.trainees||'—'}</td>
+            <td><span class="badge ${PSTAT[p.status]?.cls||'bi'}">${PSTAT[p.status]?.l||p.status}</span></td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+
+  return `<div class="ph">
+    <div><h2>Grade de horários</h2><p>Treinamentos do dia em ordem cronológica</p></div>
+    ${selS?`<button class="btn btn-p" data-action="export-pdf" data-cid="${selS.clientId}">📄 Exportar PDF</button>`:''}
+  </div>
+  <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
+    <label style="font-size:12px;color:var(--text2);font-weight:500;">Selecionar dia:</label>
+    <select class="inp" style="width:auto;font-size:13px;" id="ttSel">
+      ${ss.map(s=>{const cl=gc(s.clientId);return`<option value="${s.id}"${selSid===s.id?' selected':''}>${s.label} — ${fd(s.date)} (${cl?.name||''})</option>`;}).join('')}
+    </select>
+    ${selS?`<span style="font-size:12px;color:var(--text2);">📅 ${fdd(selS.date)} · <span class="badge ${MOD[selS.modality]?.cls||'bgr'}">${MOD[selS.modality]?.l||''}</span>${selS.notes?` · ${selS.notes}`:''}</span>`:''}
+  </div>
+  ${body}`;
+}
+
+// ── CATÁLOGO ──────────────────────────────────────────────────────────────
+function renderCatalogo(){
+  const cats=Object.values(D.catalog||{}).sort((a,b)=>a.name.localeCompare(b.name));
+  return `<div class="ph"><div><h2>Catálogo de processos</h2><p>${cats.length} processos padrão reutilizáveis</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-w" data-action="import-jsr-catalog" title="Importa todos os processos padrão JSR">⬇ Importar processos JSR</button><button class="btn btn-p" data-action="open-modal" data-modal="add-catalog">+ Novo processo</button></div></div>
+  <div class="card" style="overflow:hidden;">
+    <table class="tbl"><thead><tr><th>#</th><th>Nome do processo</th><th>Duração padrão</th><th>Observação padrão</th><th style="text-align:center;">Ações</th></tr></thead>
+    <tbody>${cats.map((cat,i)=>`<tr>
+      <td style="color:var(--text3);font-size:11px;">${i+1}</td>
+      <td style="font-weight:500;">${cat.name}</td>
+      <td style="color:var(--text2);">${cat.duration||2}h</td>
+      <td style="color:var(--text2);font-size:12px;">${cat.obs||'—'}</td>
+      <td style="text-align:center;">
+        <div style="display:flex;gap:4px;justify-content:center;">
+          <button class="btn btn-i btn-sm" data-action="open-modal" data-modal="edit-catalog" data-id="${cat.id}" title="Editar">✎</button>
+          <button class="btn btn-d btn-sm" data-action="rm-catalog" data-id="${cat.id}" title="Remover">×</button>
+        </div>
+      </td>
+    </tr>`).join('')}</tbody></table>
+  </div>`;
+}
+
+// ── CLIENTES ──────────────────────────────────────────────────────────────
+function renderClientes(){
+  const cs=Object.values(D.clients||{});
+  return `<div class="ph"><div><h2>Clientes</h2><p>Projetos, departamentos e replicadores</p></div><button class="btn btn-p" data-action="open-modal" data-modal="add-client">+ Novo cliente</button></div>
+  ${cs.length===0?`<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum cliente cadastrado.<br><button class="btn btn-p" style="margin-top:12px;" data-action="open-modal" data-modal="add-client">+ Cadastrar primeiro cliente</button></div>`:''}
+  ${cs.map(c=>`<div class="day-card" style="margin-bottom:10px;">
+    <div style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;align-items:center;gap:12px;">${av(c.name,34)}<div>
+        <div style="font-weight:500;font-size:14px;">${c.name}</div>
+        <div style="font-size:11px;color:var(--text2);">Início: ${fd(c.startDate)} · ${Object.keys(c.depts||{}).length} depto(s) · ${Object.keys(c.replicadores||{}).length} replicador(es)</div>
+      </div></div>
+      <div style="display:flex;gap:5px;align-items:center;">
+        <button class="btn btn-i btn-sm" data-action="open-modal" data-modal="edit-client" data-id="${c.id}" title="Editar cliente">✎</button>
+        <button style="color:var(--text2);font-size:16px;background:transparent;border:none;padding:4px 8px;" data-action="exp" data-id="${c.id}">${S.exp===c.id?'▲':'▼'}</button>
+      </div>
+    </div>
+    ${S.exp===c.id?`<div style="border-top:1px solid var(--border);padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+      <!-- DEPARTAMENTOS -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <h4 style="font-size:12px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;">Departamentos</h4>
+          <button class="btn btn-sm btn-p" data-action="open-modal" data-modal="add-dept" data-cid="${c.id}">+ Adicionar</button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${Object.values(c.depts||{}).length===0?`<span style="font-size:12px;color:var(--text2);">Nenhum departamento ainda.</span>`:''}
+          ${Object.values(c.depts||{}).map(d=>`<div style="display:flex;align-items:center;gap:5px;padding:5px 10px;background:var(--bg);border-radius:20px;font-size:12px;border:1px solid var(--border);">
+            <span style="width:8px;height:8px;border-radius:2px;background:${avc(d.name)};display:inline-block;"></span>${d.name}
+            <button class="btn btn-i btn-sm" style="padding:1px 6px;" data-action="open-modal" data-modal="edit-dept" data-cid="${c.id}" data-did="${d.id}" title="Editar">✎</button>
+            <button style="color:var(--red-t);font-size:13px;line-height:1;border:none;background:transparent;cursor:pointer;" data-action="rm-dept" data-cid="${c.id}" data-did="${d.id}">×</button>
+          </div>`).join('')}
+        </div>
+      </div>
+
+      <!-- REPLICADORES -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <h4 style="font-size:12px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;">Replicadores</h4>
+          <button class="btn btn-sm btn-p" data-action="open-modal" data-modal="add-rep" data-cid="${c.id}">+ Adicionar</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          ${Object.values(c.replicadores||{}).length===0?`<span style="font-size:12px;color:var(--text2);">Nenhum replicador ainda.<br><span style="font-size:11px;">Replicadores são os responsáveis por aprender e repassar o conteúdo.</span></span>`:''}
+          ${Object.values(c.replicadores||{}).map(r=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border-radius:var(--r);border:1px solid var(--border);">
+            ${av(r.name,26)}
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12px;font-weight:500;">${r.name}</div>
+              ${r.dept?`<div style="font-size:11px;color:var(--text2);">${r.dept}</div>`:''}
+            </div>
+            <button class="btn btn-i btn-sm" style="padding:1px 6px;" data-action="open-modal" data-modal="edit-rep" data-cid="${c.id}" data-rid="${r.id}" title="Editar">✎</button>
+            <button style="color:var(--red-t);font-size:13px;line-height:1;border:none;background:transparent;cursor:pointer;" data-action="rm-rep" data-cid="${c.id}" data-rid="${r.id}">×</button>
+          </div>`).join('')}
+        </div>
+      </div>
+
+    </div>`:''}
+  </div>`).join('')}`;
+}
+
+// ── ADMIN ─────────────────────────────────────────────────────────────────
+function renderAdmin(){
+  const users=Object.values(D.users||{});
+  const myUid=currentUser?.uid;
+  return `<div class="ph"><div><h2>Usuários</h2><p>Controle de acesso ao painel</p></div><button class="btn btn-p" data-action="open-modal" data-modal="add-user">+ Convidar usuário</button></div>
+  <div class="card" style="overflow:hidden;margin-bottom:16px;"><div style="overflow-x:auto;"><table class="tbl"><thead><tr><th>Usuário</th><th>E-mail</th><th>UID</th><th>Perfil</th><th>Clientes</th><th style="text-align:center;">Ações</th></tr></thead>
+  <tbody>${users.map(u=>`<tr>
+    <td><div style="display:flex;align-items:center;gap:9px;">${av(u.name||u.email,30)}<span style="font-weight:500;">${u.name||'—'}</span></div></td>
+    <td style="font-size:12px;color:var(--text2);">${u.email||'—'}</td>
+    <td style="font-size:10px;color:var(--text3);font-family:monospace;">${(u.uid||'').slice(0,14)}…</td>
+    <td><span class="badge ${ROLES[u.role]?.cls||'bi'}">${ROLES[u.role]?.l||u.role}</span></td>
+    <td style="font-size:12px;color:var(--text2);">${u.role==='admin'?`<span style="color:var(--amber);">Acesso total</span>`:Object.keys(u.clientIds||{}).length===0?'Nenhum':Object.keys(u.clientIds||{}).map(id=>D.clients[id]?.name||id).join(', ')}</td>
+    <td style="text-align:center;">
+      <div style="display:flex;gap:4px;justify-content:center;">
+        <button class="btn btn-i btn-sm" data-action="open-modal" data-modal="edit-user" data-id="${u.uid}" title="Editar perfil">✎</button>
+        ${u.uid!==myUid?`<button class="btn btn-d btn-sm" data-action="rm-user" data-id="${u.uid}" data-name="${u.name||u.email}" title="Remover acesso">×</button>`:`<span style="font-size:10px;color:var(--text3);padding:3px 6px;">você</span>`}
+      </div>
+    </td>
+  </tr>`).join('')}</tbody></table></div></div>
+  <div class="card" style="padding:16px;">
+    <h3 style="font-size:13px;font-weight:500;margin-bottom:8px;">Como adicionar usuários corretamente</h3>
+    <div style="font-size:12px;color:var(--text2);line-height:1.8;">
+      <strong>Passo 1:</strong> Acesse o <a href="https://console.firebase.google.com/project/implantationjsr/authentication/users" target="_blank" style="color:var(--blue);">Firebase Console → Authentication</a> e clique em <strong>"Adicionar usuário"</strong> — coloque o e-mail e senha da pessoa.<br>
+      <strong>Passo 2:</strong> Copie o <strong>UID</strong> que aparece na coluna "UID do usuário" na mesma linha do e-mail cadastrado.<br>
+      <strong>Passo 3:</strong> Clique em <strong>"+ Convidar usuário"</strong> acima, cole o UID copiado e defina nome, perfil e clientes.<br>
+      <span style="color:var(--red);font-weight:500;">⚠ Atenção:</span> o UID deve ser copiado exatamente do Firebase — se errar o UID, o perfil ficará vinculado à pessoa errada.
+    </div>
+  </div>`;
+}
+
+// ── MODALS ────────────────────────────────────────────────────────────────
+function fOpts(list,sel){ return list.map(x=>`<option value="${x.id}"${sel===x.id?' selected':''}>${x.name||x.email}</option>`).join(''); }
+function tOpts(sel){ return Object.values(D.users||{}).filter(u=>u.role!=='gestor').map(u=>`<option value="${u.uid}"${sel===u.uid?' selected':''}>${u.name||u.email}</option>`).join(''); }
+function dOpts(c,sel){ return Object.values(c?.depts||{}).map(d=>`<option value="${d.id}"${sel===d.id?' selected':''}>${d.name}</option>`).join(''); }
+function catOpts(sel){ return Object.values(D.catalog||{}).sort((a,b)=>a.name.localeCompare(b.name)).map(cat=>`<option value="${cat.id}"${sel===cat.id?' selected':''}>${cat.name}</option>`).join(''); }
+function repOpts(c,sel){ return Object.values(c?.replicadores||{}).map(r=>`<option value="${r.name}"${sel===r.name?' selected':''}>${r.name}${r.dept?' ('+r.dept+')':''}</option>`).join(''); }
+function repField(id,label,c,sel){ const opts=repOpts(c,sel); return `<div style="flex:1;"><label class="lbl">${label}</label><select class="inp" id="${id}"><option value="">— Nenhum —</option>${opts}</select>${!opts?`<div style="font-size:10px;color:var(--amber);margin-top:3px;">⚠ Cadastre replicadores na aba Clientes primeiro.</div>`:''}</div>`; }
+function clientOpts(excludeId){ return Object.values(D.clients||{}).filter(c=>c.id!==excludeId).map(c=>`<option value="${c.id}">${c.name}</option>`).join(''); }
+function clientChk(selIds={}){ return Object.values(D.clients||{}).map(x=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border-radius:var(--r);cursor:pointer;font-size:13px;"><input type="checkbox" value="${x.id}" class="uck"${selIds[x.id]?' checked':''}> ${x.name}</label>`).join(''); }
+
+function openModal(type,data={}){
+  let title='',body='';
+  const cs=Object.values(D.clients||{});
+  const trs=Object.values(D.users||{}).filter(u=>u.role!=='gestor');
+
+  // ── DIA ──
+  if(type==='add-day'){
+    title='Novo dia de treinamento';
+    body=`<div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Cliente</label><select class="inp" id="fdCid"><option value="">Selecione...</option>${fOpts(cs,'')}</select></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Rótulo</label><input class="inp" id="fdLabel" placeholder="Ex: 1° Dia"></div><div style="flex:1;"><label class="lbl">Data</label><input type="date" class="inp" id="fdDate"></div></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Modalidade</label><select class="inp" id="fdMod"><option value="presencial">Presencial</option><option value="remoto">Remoto</option></select></div><div style="flex:1;"><label class="lbl">Observação</label><input class="inp" id="fdNotes" placeholder="Opcional"></div></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-day">Criar dia</button></div>
+    </div>`;
+  } else if(type==='edit-day'){
+    const s=D.sessions[data.sid];
+    title='Editar dia de treinamento';
+    body=`<input type="hidden" id="edSid" value="${data.sid}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Cliente</label><select class="inp" id="edCid"><option value="">Selecione...</option>${fOpts(cs,s?.clientId)}</select></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Rótulo</label><input class="inp" id="edLabel" value="${esc(s?.label||'')}"></div><div style="flex:1;"><label class="lbl">Data</label><input type="date" class="inp" id="edDate" value="${s?.date||''}"></div></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Modalidade</label><select class="inp" id="edMod"><option value="presencial"${s?.modality==='presencial'?' selected':''}>Presencial</option><option value="remoto"${s?.modality==='remoto'?' selected':''}>Remoto</option></select></div><div style="flex:1;"><label class="lbl">Observação</label><input class="inp" id="edNotes" value="${esc(s?.notes||'')}"></div></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-day">Salvar</button></div>
+    </div>`;
+
+  // ── PROCESSO ──
+  } else if(type==='add-proc'){
+    const s=D.sessions[data.sid];const cl=gc(s?.clientId);
+    title='Adicionar processo manual';
+    body=`<input type="hidden" id="fpSid" value="${data.sid}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome do processo</label><input class="inp" id="fpName" placeholder="Ex: Cadastro de produto"></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Departamento</label><select class="inp" id="fpDept"><option value="">Selecione...</option>${dOpts(cl,'')}</select></div><div style="flex:1;"><label class="lbl">Responsável (consultor)</label><select class="inp" id="fpTr"><option value="">Selecione...</option>${tOpts('')}</select></div></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Início</label><input type="time" class="inp" id="fpST" value="09:00"></div><div style="flex:1;"><label class="lbl">Fim</label><input type="time" class="inp" id="fpET" value="11:00"></div></div>
+      <div><label class="lbl">Treinandos (lista geral)</label><input class="inp" id="fpTr2" placeholder="Ex: Natasha / Érica / Rafael"></div>
+      <div style="background:var(--blue-bg);border-radius:var(--r);padding:11px;margin-top:2px;">
+        <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores — responsáveis por aprender e repassar o conteúdo</div>
+        <div style="display:flex;gap:10px;">
+          ${repField('fpRep1','Replicador 1',cl,'')}
+          ${repField('fpRep2','Replicador 2 (opcional)',cl,'')}
+        </div>
+      </div>
+      <div><label class="lbl">Observação</label><textarea class="inp" id="fpObs" rows="2" style="resize:vertical;" placeholder="Detalhes ou instruções especiais..."></textarea></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-proc">Adicionar</button></div>
+    </div>`;
+  } else if(type==='edit-proc'){
+    const s=D.sessions[data.sid];const cl=gc(s?.clientId);const proc=s?.processes?.[data.pid];
+    title='Editar processo';
+    body=`<input type="hidden" id="epSid" value="${data.sid}"><input type="hidden" id="epPid" value="${data.pid}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome do processo</label><input class="inp" id="epName" value="${esc(proc?.name||'')}"></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Departamento</label><select class="inp" id="epDept"><option value="">Selecione...</option>${dOpts(cl,proc?.deptId)}</select></div><div style="flex:1;"><label class="lbl">Responsável (consultor)</label><select class="inp" id="epTr"><option value="">Selecione...</option>${tOpts(proc?.trainerId)}</select></div></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Início</label><input type="time" class="inp" id="epST" value="${proc?.startTime||'09:00'}"></div><div style="flex:1;"><label class="lbl">Fim</label><input type="time" class="inp" id="epET" value="${proc?.endTime||'11:00'}"></div></div>
+      <div><label class="lbl">Treinandos (lista geral)</label><input class="inp" id="epTr2" value="${esc(proc?.trainees||'')}"></div>
+      <div style="background:var(--blue-bg);border-radius:var(--r);padding:11px;">
+        <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores — responsáveis por aprender e repassar o conteúdo</div>
+        <div style="display:flex;gap:10px;">
+          ${repField('epRep1','Replicador 1',cl,proc?.rep1||'')}
+          ${repField('epRep2','Replicador 2 (opcional)',cl,proc?.rep2||'')}
+        </div>
+      </div>
+      <div><label class="lbl">Observação</label><textarea class="inp" id="epObs" rows="2" style="resize:vertical;">${esc(proc?.obs||'')}</textarea></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-proc">Salvar alterações</button></div>
+    </div>`;
+
+  // ── DO CATÁLOGO ──
+  } else if(type==='add-proc-catalog'){
+    const s=D.sessions[data.sid];const cl=gc(s?.clientId);
+    title='Adicionar processo do catálogo';
+    body=`<input type="hidden" id="acSid" value="${data.sid}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Processo</label><select class="inp" id="acCat"><option value="">Selecione do catálogo...</option>${catOpts('')}</select></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Departamento</label><select class="inp" id="acDept"><option value="">Selecione...</option>${dOpts(cl,'')}</select></div><div style="flex:1;"><label class="lbl">Responsável</label><select class="inp" id="acTr"><option value="">Selecione...</option>${tOpts('')}</select></div></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Início</label><input type="time" class="inp" id="acST" value="09:00"></div><div style="flex:1;"><label class="lbl">Fim</label><input type="time" class="inp" id="acET" value="11:00"></div></div>
+      <div><label class="lbl">Treinandos (lista geral)</label><input class="inp" id="acTr2" placeholder="Ex: Natasha / Érica / Rafael"></div>
+      <div style="background:var(--blue-bg);border-radius:var(--r);padding:11px;">
+        <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores</div>
+        <div style="display:flex;gap:10px;">
+          ${repField('acRep1','Replicador 1',cl,'')}
+          ${repField('acRep2','Replicador 2 (opcional)',cl,'')}
+        </div>
+      </div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-proc-catalog">Adicionar</button></div>
+    </div>`;
+
+  // ── CATÁLOGO ──
+  } else if(type==='add-catalog'){
+    title='Novo processo no catálogo';
+    body=`<div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome do processo</label><input class="inp" id="catName" placeholder="Ex: Cadastro de produto"></div>
+      <div><label class="lbl">Duração padrão (horas)</label><input type="number" class="inp" id="catDur" min="0.5" step="0.5" value="2" style="width:120px;"></div>
+      <div><label class="lbl">Observação padrão</label><textarea class="inp" id="catObs" rows="2" style="resize:vertical;" placeholder="Instruções padrão para este processo..."></textarea></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-catalog">Adicionar ao catálogo</button></div>
+    </div>`;
+  } else if(type==='edit-catalog'){
+    const cat=D.catalog[data.id];
+    title='Editar processo do catálogo';
+    body=`<input type="hidden" id="ecId" value="${data.id}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome do processo</label><input class="inp" id="ecName" value="${esc(cat?.name||'')}"></div>
+      <div><label class="lbl">Duração padrão (horas)</label><input type="number" class="inp" id="ecDur" min="0.5" step="0.5" value="${cat?.duration||2}" style="width:120px;"></div>
+      <div><label class="lbl">Observação padrão</label><textarea class="inp" id="ecObs" rows="2" style="resize:vertical;">${esc(cat?.obs||'')}</textarea></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-catalog">Salvar</button></div>
+    </div>`;
+
+  // ── CLIENTE ──
+  } else if(type==='add-client'){
+    title='Novo cliente';
+    body=`<div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome do cliente</label><input class="inp" id="fcName" placeholder="Ex: Empresa XYZ"></div>
+      <div><label class="lbl">Data de início</label><input type="date" class="inp" id="fcDate"></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-client">Criar</button></div>
+    </div>`;
+  } else if(type==='edit-client'){
+    const cl=D.clients[data.id];
+    title='Editar cliente';
+    body=`<input type="hidden" id="eclId" value="${data.id}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome do cliente</label><input class="inp" id="eclName" value="${esc(cl?.name||'')}"></div>
+      <div><label class="lbl">Data de início</label><input type="date" class="inp" id="eclDate" value="${cl?.startDate||''}"></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-client">Salvar</button></div>
+    </div>`;
+
+  // ── DEPARTAMENTO ──
+  } else if(type==='add-dept'){
+    title='Adicionar departamento';
+    body=`<input type="hidden" id="fdCid2" value="${data.cid}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome do departamento</label><input class="inp" id="fdDname" placeholder="Ex: Comercial"></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-dept">Adicionar</button></div>
+    </div>`;
+  } else if(type==='edit-dept'){
+    const dept=D.clients[data.cid]?.depts?.[data.did];
+    title='Editar departamento';
+    body=`<input type="hidden" id="eddCid" value="${data.cid}"><input type="hidden" id="eddDid" value="${data.did}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome do departamento</label><input class="inp" id="eddName" value="${esc(dept?.name||'')}"></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-dept">Salvar</button></div>
+    </div>`;
+
+  // ── REPLICADOR ──
+  } else if(type==='add-rep'){
+    const cl=D.clients[data.cid];
+    title='Adicionar replicador';
+    body=`<input type="hidden" id="arCid" value="${data.cid}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome completo</label><input class="inp" id="arName" placeholder="Ex: Natasha Silva"></div>
+      <div><label class="lbl">Departamento / função (opcional)</label><select class="inp" id="arDept"><option value="">Selecione...</option>${Object.values(cl?.depts||{}).map(d=>`<option value="${d.name}">${d.name}</option>`).join('')}</select></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-rep">Adicionar</button></div>
+    </div>`;
+  } else if(type==='edit-rep'){
+    const cl=D.clients[data.cid];
+    const rep=cl?.replicadores?.[data.rid];
+    title='Editar replicador';
+    body=`<input type="hidden" id="erCid" value="${data.cid}"><input type="hidden" id="erRid" value="${data.rid}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome completo</label><input class="inp" id="erName" value="${esc(rep?.name||'')}"></div>
+      <div><label class="lbl">Departamento / função</label><select class="inp" id="erDept"><option value="">Selecione...</option>${Object.values(cl?.depts||{}).map(d=>`<option value="${d.name}"${rep?.dept===d.name?' selected':''}>${d.name}</option>`).join('')}</select></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-rep">Salvar</button></div>
+    </div>`;
+
+  // ── USUÁRIO ──
+  } else if(type==='add-user'){
+    title='Convidar usuário';
+    body=`<p style="font-size:12px;color:var(--text2);margin-bottom:14px;">Primeiro crie o usuário no <a href="https://console.firebase.google.com/project/implantationjsr/authentication/users" target="_blank" style="color:var(--blue);">Firebase Authentication</a>, depois cole o UID aqui.</p>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">UID do usuário (Firebase)</label><input class="inp" id="fuUid" placeholder="Copie do Firebase Console"></div>
+      <div><label class="lbl">Nome de exibição</label><input class="inp" id="fuName" placeholder="Ex: João Silva"></div>
+      <div><label class="lbl">E-mail</label><input class="inp" id="fuEmail" type="email" placeholder="joao@empresa.com"></div>
+      <div><label class="lbl">Perfil</label><select class="inp" id="fuRole"><option value="instrutor">Instrutor</option><option value="gestor">Gestor (cliente)</option><option value="admin">Administrador</option></select></div>
+      <div><label class="lbl">Clientes com acesso</label><div style="display:flex;flex-direction:column;gap:4px;">${clientChk({})}</div></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-user">Salvar</button></div>
+    </div>`;
+  } else if(type==='edit-user'){
+    const u=D.users[data.id];
+    title='Editar usuário';
+    body=`<input type="hidden" id="euUid" value="${data.id}">
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome de exibição</label><input class="inp" id="euName" value="${esc(u?.name||'')}"></div>
+      <div><label class="lbl">E-mail</label><input class="inp" id="euEmail" type="email" value="${esc(u?.email||'')}"></div>
+      <div><label class="lbl">Perfil</label><select class="inp" id="euRole"><option value="instrutor"${u?.role==='instrutor'?' selected':''}>Instrutor</option><option value="gestor"${u?.role==='gestor'?' selected':''}>Gestor (cliente)</option><option value="admin"${u?.role==='admin'?' selected':''}>Administrador</option></select></div>
+      <div><label class="lbl">Clientes com acesso</label><div style="display:flex;flex-direction:column;gap:4px;">${clientChk(u?.clientIds||{})}</div></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-user">Salvar</button></div>
+    </div>`;
+
+  // ── REPLICAR ──
+  } else if(type==='replicate'){
+    const s=D.sessions[data.sid];
+    title='Replicar cronograma';
+    body=`<input type="hidden" id="rpSid" value="${data.sid}">
+    <p style="font-size:13px;color:var(--text2);margin-bottom:14px;">Copia <strong>${s?.label}</strong> com todos os processos para outro cliente.</p>
+    <div style="display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Cliente destino</label><select class="inp" id="rpCid"><option value="">Selecione...</option>${clientOpts(s?.clientId)}</select></div>
+      <div><label class="lbl">Nova data</label><input type="date" class="inp" id="rpDate" value="${s?.date||''}"></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-replicate">Replicar</button></div>
+    </div>`;
+  }
+
+  document.getElementById('mb').innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <h3 style="font-size:16px;font-weight:500;">${title}</h3>
+      <button data-action="close-modal" style="color:var(--text2);font-size:22px;line-height:1;border:none;background:transparent;cursor:pointer;">×</button>
+    </div>
+    <div style="padding:20px;max-height:80vh;overflow-y:auto;">${body}</div>`;
+  document.getElementById('ov').classList.add('open');
+}
+function closeModal(){document.getElementById('ov').classList.remove('open');document.getElementById('mb').innerHTML='';}
+window.toggleSidebar=function(){const sb=document.getElementById('sidebar');const ov=document.getElementById('mob-overlay');sb.classList.toggle('open');ov.classList.toggle('open');}
+window.closeSidebar=function(){document.getElementById('sidebar').classList.remove('open');document.getElementById('mob-overlay').classList.remove('open');}
+function toggleSidebar(){window.toggleSidebar();}
+function closeSidebar(){window.closeSidebar();}
+
+// ── EXPORT PDF ────────────────────────────────────────────────────────────
+function exportPDF(cid){
+  const c=gc(cid);if(!c)return;
+  const ss=myS().filter(s=>s.clientId===cid).sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
+  const allP=ss.flatMap(s=>Object.values(s.processes||{}));
+  const done=allP.filter(p=>p.status==='realizado'||p.status==='video').length;
+  const pct=allP.length>0?Math.round(done/allP.length*100):0;
+  const totalH=allP.filter(p=>p.status==='realizado'||p.status==='video').reduce((a,p)=>{return a+(t2m(p.endTime||'10:00')-t2m(p.startTime||'09:00'))/60;},0);
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const ST_COLOR={realizado:'#27500a',video:'#633806',pendente:'#0c447c',cancelado:'#791f1f'};
+  const ST_BG={realizado:'#eaf3de',video:'#faeeda',pendente:'#e6f1fb',cancelado:'#fcebeb'};
+  const MOD_COLOR={presencial:'#27500a',remoto:'#444441'};
+  const MOD_BG={presencial:'#eaf3de',remoto:'#f1efe8'};
+
+  const rows=ss.map(s=>{
+    const procs=Object.values(s.processes||{}).sort((a,b)=>(a.order??999)-(b.order??999));
+    if(!procs.length)return'';
+    return `<tr><td colspan="7" style="background:#e6f1fb;padding:8px 12px;font-weight:600;font-size:12px;color:#0c447c;border-top:2px solid #185fa5;">
+      ${s.label} — ${fdd(s.date)} &nbsp;<span style="background:${MOD_BG[s.modality]||'#f1efe8'};color:${MOD_COLOR[s.modality]||'#444'};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:500;">${MOD[s.modality]?.l||s.modality}</span>${s.notes?` &nbsp;— <em style="font-weight:400;color:#6b6a65;">${s.notes}</em>`:''}
+    </td></tr>
+    ${procs.map((p,i)=>{
+      const tr=gu(p.trainerId);const dept=c.depts?.[p.deptId];
+      const bg=i%2===0?'#ffffff':'#f9f8f5';
+      return `<tr style="background:${bg};">
+        <td style="padding:7px 12px;font-size:11px;color:#6b6a65;white-space:nowrap;">${p.startTime||'—'}–${p.endTime||'?'}</td>
+        <td style="padding:7px 12px;font-size:12px;font-weight:500;">${p.name}</td>
+        <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${dept?.name||'—'}</td>
+        <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${tr?.name||'—'}</td>
+        <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${p.trainees||'—'}</td>
+        <td style="padding:7px 12px;font-size:11px;"><span style="background:${ST_BG[p.status]||'#e6f1fb'};color:${ST_COLOR[p.status]||'#0c447c'};padding:2px 8px;border-radius:12px;font-weight:500;">${PSTAT[p.status]?.l||p.status}</span></td>
+        <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${p.obs||''}</td>
+      </tr>`;
+    }).join('')}`;
+  }).join('');
+
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+  <title>Cronograma — ${c.name}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:Arial,sans-serif;color:#1a1a18;background:#fff;padding:32px;}
+    @media print{body{padding:0;}@page{margin:20mm 15mm;size:A4 landscape;}}
+    h1{font-size:20px;font-weight:700;color:#185fa5;}
+    table{width:100%;border-collapse:collapse;font-size:12px;}
+    th{background:#185fa5;color:#fff;padding:9px 12px;text-align:left;font-size:11px;font-weight:600;}
+    td{border-bottom:1px solid #e0ddd4;}
+    .sig-box{border:1px solid #c8c5ba;border-radius:8px;padding:20px 24px;margin-top:8px;}
+    .sig-line{border-bottom:1px solid #1a1a18;margin:40px 0 8px;width:280px;}
+    .progress-bar{height:10px;background:#e0ddd4;border-radius:5px;overflow:hidden;}
+    .progress-fill{height:100%;border-radius:5px;background:${pct>=70?'#3b6d11':pct>=40?'#854f0b':'#185fa5'};}
+  </style></head><body>
+  <!-- CABEÇALHO -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #185fa5;">
+    <div>
+      <div style="font-size:10px;letter-spacing:2px;color:#6b6a65;text-transform:uppercase;margin-bottom:6px;">JSR Sistemas · TrainControl</div>
+      <h1>${c.name}</h1>
+      <div style="font-size:13px;color:#6b6a65;margin-top:4px;">Cronograma de implantação e treinamento</div>
+      <div style="font-size:11px;color:#9b9a95;margin-top:2px;">Gerado em ${today}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:11px;color:#6b6a65;margin-bottom:8px;">Progresso geral</div>
+      <div style="font-size:28px;font-weight:700;color:${pct>=70?'#3b6d11':pct>=40?'#854f0b':'#185fa5'};">${pct}%</div>
+      <div style="font-size:11px;color:#6b6a65;">${done} de ${allP.length} processos</div>
+      <div style="font-size:11px;color:#6b6a65;">${totalH.toFixed(1)}h realizadas</div>
+    </div>
+  </div>
+
+  <!-- RESUMO -->
+  <div style="display:flex;gap:12px;margin-bottom:24px;">
+    ${[
+      {l:'Dias de treinamento',v:ss.length,c:'#185fa5'},
+      {l:'Processos concluídos',v:done,c:'#3b6d11'},
+      {l:'Pendentes',v:allP.length-done,c:'#854f0b'},
+      {l:'Horas realizadas',v:totalH.toFixed(1)+'h',c:'#185fa5'},
+    ].map(x=>`<div style="flex:1;background:#f5f4f0;border-radius:8px;padding:12px;"><div style="font-size:10px;color:#6b6a65;margin-bottom:4px;">${x.l}</div><div style="font-size:22px;font-weight:700;color:${x.c};">${x.v}</div></div>`).join('')}
+  </div>
+
+  <!-- CRONOGRAMA -->
+  <h2 style="font-size:14px;font-weight:600;margin-bottom:12px;color:#1a1a18;">Cronograma detalhado</h2>
+  <table>
+    <thead><tr><th style="width:90px;">Horário</th><th>Processo</th><th style="width:130px;">Departamento</th><th style="width:110px;">Responsável</th><th>Treinandos</th><th style="width:90px;">Status</th><th>Observações</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <!-- ASSINATURA -->
+  <div style="margin-top:40px;display:flex;gap:40px;align-items:flex-start;">
+    <div class="sig-box" style="flex:1;">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:#1a1a18;">Confirmação do cliente</div>
+      <div style="font-size:11px;color:#6b6a65;margin-bottom:20px;">Declaro que os treinamentos acima foram realizados conforme acordado.</div>
+      <div class="sig-line"></div>
+      <div style="font-size:11px;color:#6b6a65;">Assinatura do responsável</div>
+      <div style="margin-top:8px;font-size:11px;color:#6b6a65;">Nome: _____________________________________ &nbsp;&nbsp; Data: _____ / _____ / _______</div>
+      <div style="margin-top:8px;font-size:11px;color:#6b6a65;">Cargo: ________________________________________</div>
+    </div>
+    <div class="sig-box" style="flex:1;">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:#1a1a18;">Assinatura JSR Sistemas</div>
+      <div style="font-size:11px;color:#6b6a65;margin-bottom:20px;">Responsável pelo projeto de implantação.</div>
+      <div class="sig-line"></div>
+      <div style="font-size:11px;color:#6b6a65;">Assinatura do consultor</div>
+      <div style="margin-top:8px;font-size:11px;color:#6b6a65;">Nome: _____________________________________ &nbsp;&nbsp; Data: _____ / _____ / _______</div>
+    </div>
+  </div>
+
+  <div style="margin-top:24px;padding-top:12px;border-top:1px solid #e0ddd4;font-size:10px;color:#9b9a95;text-align:center;">TrainControl · JSR Sistemas · Documento gerado em ${today}</div>
+  <script>window.onload=()=>window.print();<\/script>
+  </body></html>`;
+
+  const w=window.open('','_blank');
+  if(w){w.document.write(html);w.document.close();}
+}
+// ── DRAG AND DROP PARA PROCESSOS ─────────────────────────────────────────
+function initDragDrop(){
+  document.querySelectorAll('.proc-list').forEach(container=>{
+    const sid=container.dataset.dragSid;
+    if(!sid)return;
+    let dragging=null;
+
+    container.querySelectorAll('.proc-row[draggable="true"]').forEach(row=>{
+      // Inicia drag apenas pelo handle
+      const handle=row.querySelector('.drag-handle');
+      if(handle){
+        handle.addEventListener('mousedown',()=>{ row.setAttribute('draggable','true'); });
+      }
+
+      row.addEventListener('dragstart',e=>{
+        dragging=row;
+        setTimeout(()=>row.classList.add('dragging'),0);
+        e.dataTransfer.effectAllowed='move';
+        e.dataTransfer.setData('text/plain',row.dataset.pid);
+      });
+
+      row.addEventListener('dragend',()=>{
+        row.classList.remove('dragging');
+        container.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+        dragging=null;
+        // Salva nova ordem
+        const rows=[...container.querySelectorAll('.proc-row')];
+        const updates={};
+        rows.forEach((r,i)=>{ if(r.dataset.pid) updates[`/sessions/${sid}/processes/${r.dataset.pid}/order`]=i; });
+        if(Object.keys(updates).length){
+          import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js')
+            .then(({getDatabase,ref,update})=>update(ref(getDatabase()),updates))
+            .catch(()=>{});
+        }
+      });
+
+      row.addEventListener('dragover',e=>{
+        e.preventDefault();
+        e.dataTransfer.dropEffect='move';
+        if(!dragging||dragging===row)return;
+        container.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+        const rect=row.getBoundingClientRect();
+        const mid=rect.top+rect.height/2;
+        if(e.clientY<mid){
+          row.classList.add('drag-over');
+          container.insertBefore(dragging,row);
+        } else {
+          container.insertBefore(dragging,row.nextSibling);
+        }
+      });
+    });
+  });
+}
+
+function render(){
+  renderSidebar();
+  const ct=document.getElementById('content');
+  if(S.view==='dashboard')ct.innerHTML=renderDashboard();
+  else if(S.view==='cronograma'){ct.innerHTML=renderCronograma();setTimeout(initDragDrop,50);}
+  else if(S.view==='horarios')ct.innerHTML=renderHorarios();
+  else if(S.view==='catalogo')ct.innerHTML=renderCatalogo();
+  else if(S.view==='clientes')ct.innerHTML=renderClientes();
+  else if(S.view==='admin')ct.innerHTML=renderAdmin();
+}
+
+// ── EVENTS ────────────────────────────────────────────────────────────────
+const q = id => document.getElementById(id)?.value?.trim()||'';
+const qi = id => parseFloat(document.getElementById(id)?.value)||0;
+
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('[data-action]');if(!t)return;
+  const a=t.dataset.action;
+  if(a==='logout'){await signOut(auth);}
+  else if(a==='export-pdf'){exportPDF(t.dataset.cid);}
+  else if(a==='send-confirmations'){
+    const sid=t.dataset.sid;
+    const s=D.sessions[sid];
+    if(!s)return;
+    const procs=Object.values(s.processes||{});
+    const reps={};
+    procs.forEach(p=>{
+      if(p.rep1?.trim()){if(!reps[p.rep1])reps[p.rep1]=[];reps[p.rep1].push({id:p.id,name:p.name,startTime:p.startTime,endTime:p.endTime});}
+      if(p.rep2?.trim()){if(!reps[p.rep2])reps[p.rep2]=[];reps[p.rep2].push({id:p.id,name:p.name,startTime:p.startTime,endTime:p.endTime});}
+    });
+    const repNames=Object.keys(reps);
+    if(repNames.length===0){alert('Nenhum replicador cadastrado nos processos deste dia.\n\nEdite os processos (✎) e adicione os replicadores.');return;}
+    const c=gc(s.clientId);
+    const dateStr=s.date?new Date(s.date+'T00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}):'';
+    // Grava dados públicos de confirmação no Firebase (leitura pública via confirmation_data)
+    const confDataBatch={};
+    repNames.forEach(name=>{
+      const tokenKey=`${sid}_${name.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'')}`;
+      confDataBatch[tokenKey]={
+        sid, repName:name, clientName:c?.name||'', sessionLabel:s.label, sessionDate:dateStr,
+        processes:reps[name], createdAt:new Date().toISOString()
+      };
+    });
+    try{ await fbUpdate('/confirmation_data',confDataBatch); }catch(e){ console.warn('confirmation_data write failed',e); }
+    const base=window.location.origin+window.location.pathname;
+    let msg=`*TrainControl — JSR Sistemas*\n*${c?.name||''}*\n*${s.label} — ${dateStr}*\n\nPor favor, acesse o link abaixo para confirmar sua participação nos treinamentos de hoje:\n\n`;
+    const links=repNames.map(name=>{
+      const pids=reps[name].map(p=>p.id);
+      const link=`${base}?session=${sid}&rep=${encodeURIComponent(name)}&pids=${encodeURIComponent(pids.join(','))}`;
+      return `*${name}:*\n${link}`;
+    });
+    msg+=links.join('\n\n')+'\n\n_TrainControl · JSR Sistemas_';
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(msg).then(()=>alert(`✅ Links copiados!\n\nForam gerados ${repNames.length} link(s) para:\n${repNames.join(', ')}\n\nCole no WhatsApp do grupo ou envie individualmente.`));
+    } else {
+      prompt('Copie as mensagens abaixo:',msg);
+    }
+  }
+  else if(a==='copy-link'){
+    const sid=t.dataset.sid; const pid=t.dataset.pid;
+    const base=window.location.origin+window.location.pathname;
+    const link=`${base}?confirm=${sid}&proc=${pid}`;
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(link).then(()=>alert('🔗 Link copiado!\n\nEnvie este link pelo WhatsApp ou e-mail para os participantes confirmarem.\n\n'+link));
+    } else {
+      prompt('Copie este link e envie para os participantes:',link);
+    }
+  }
+  else if(a==='nav'){S.view=t.dataset.view;S.exp=null;closeSidebar();render();}
+  else if(a==='exp'){S.exp=S.exp===t.dataset.id?null:t.dataset.id;render();}
+  else if(a==='goto-h'){S.view='horarios';S.ttDay=t.dataset.sid;render();}
+  else if(a==='open-modal'){const d={};['sid','cid','pid','id','did'].forEach(k=>{if(t.dataset[k])d[k]=t.dataset[k];});openModal(t.dataset.modal,d);}
+  else if(a==='close-modal'){closeModal();}
+  else if(a==='mark'){await fbUpdate(`/sessions/${t.dataset.sid}/processes/${t.dataset.pid}`,{status:t.dataset.st});}
+  else if(a==='rm-proc'){if(confirm('Remover este processo?'))await fbRemove(`/sessions/${t.dataset.sid}/processes/${t.dataset.pid}`);}
+  else if(a==='rm-day'){if(confirm('Remover este dia e todos os processos?'))await fbRemove(`/sessions/${t.dataset.id}`);}
+  else if(a==='rm-dept'){if(confirm('Remover departamento?'))await fbRemove(`/clients/${t.dataset.cid}/depts/${t.dataset.did}`);}
+  else if(a==='edit-day-click'){
+    openModal('edit-day', {sid: t.dataset.sid});
+  }
+  else if(a==='replicate-click'){
+    openModal('replicate', {sid: t.dataset.sid});
+  }
+  else if(a==='move-day'){
+    const sid=t.dataset.sid; const dir=t.dataset.dir;
+    const ss=myS().sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
+    const idx=ss.findIndex(s=>s.id===sid); if(idx<0)return;
+    const swapIdx=dir==='up'?idx-1:idx+1;
+    if(swapIdx<0||swapIdx>=ss.length)return;
+    const a2=ss[idx]; const b2=ss[swapIdx];
+    const aOrd=a2.order??idx; const bOrd=b2.order??swapIdx;
+    await fbUpdate(`/sessions/${a2.id}`,{order:bOrd});
+    await fbUpdate(`/sessions/${b2.id}`,{order:aOrd});
+  }
+  else if(a==='move-proc'){
+    const sid=t.dataset.sid; const pid=t.dataset.pid; const dir=t.dataset.dir;
+    const procs=Object.values(D.sessions[sid]?.processes||{}).sort((a,b)=>(a.order??999)-(b.order??999));
+    const idx=procs.findIndex(p=>p.id===pid); if(idx<0)return;
+    const swapIdx=dir==='up'?idx-1:idx+1;
+    if(swapIdx<0||swapIdx>=procs.length)return;
+    const a2=procs[idx]; const b2=procs[swapIdx];
+    const aOrd=a2.order??idx; const bOrd=b2.order??swapIdx;
+    await fbUpdate(`/sessions/${sid}/processes/${a2.id}`,{order:bOrd});
+    await fbUpdate(`/sessions/${sid}/processes/${b2.id}`,{order:aOrd});
+  }
+  else if(a==='rm-catalog'){if(confirm('Remover do catálogo?'))await fbRemove(`/catalog/${t.dataset.id}`);}
+  else if(a==='rm-user'){
+    const name=t.dataset.name||'este usuário';
+    if(!confirm(`Remover o acesso de "${name}"?\n\nIsso remove o perfil do painel, mas não apaga o login no Firebase. Para revogar o acesso completamente, exclua também no Firebase Console → Authentication.`))return;
+    await fbRemove(`/users/${t.dataset.id}`);
+  }  else if(a==='import-jsr-catalog'){if(!confirm('Adicionar todos os processos padrão JSR ao catálogo? (Os existentes não serão removidos)'))return;const batch={};CATALOG_DEFAULT.forEach(name=>{const id=gi();batch[id]={id,name,duration:2,obs:''};});await fbUpdate('/catalog',batch);alert('Processos importados com sucesso!');}
+
+  // SAVE DAY
+  else if(a==='save-day'){
+    const cid=q('fdCid'),label=q('fdLabel'),date=q('fdDate'),modality=q('fdMod')||'presencial',notes=q('fdNotes');
+    if(!cid||!label||!date)return alert('Preencha cliente, rótulo e data.');
+    const id=gi();await fbSet(`/sessions/${id}`,{id,clientId:cid,date,modality,label,notes,processes:{}});closeModal();
+  }
+  else if(a==='save-edit-day'){
+    const sid=q('edSid'),cid=q('edCid'),label=q('edLabel'),date=q('edDate'),modality=q('edMod')||'presencial',notes=q('edNotes');
+    if(!label||!date)return alert('Preencha rótulo e data.');
+    await fbUpdate(`/sessions/${sid}`,{clientId:cid,label,date,modality,notes});closeModal();
+  }
+
+  // SAVE PROC
+  else if(a==='save-proc'){
+    const sid=q('fpSid'),name=q('fpName'),deptId=q('fpDept'),trainerId=q('fpTr'),trainees=q('fpTr2'),startTime=document.getElementById('fpST')?.value||'09:00',endTime=document.getElementById('fpET')?.value||'11:00',obs=q('fpObs'),rep1=q('fpRep1'),rep2=q('fpRep2');
+    if(!sid||!name)return alert('Informe o nome do processo.');
+    const id=gi();await fbSet(`/sessions/${sid}/processes/${id}`,{id,name,deptId,trainerId,trainees,status:'pendente',obs,startTime,endTime,rep1,rep2});closeModal();
+  }
+  else if(a==='save-edit-proc'){
+    const sid=q('epSid'),pid=q('epPid'),name=q('epName'),deptId=q('epDept'),trainerId=q('epTr'),trainees=q('epTr2'),startTime=document.getElementById('epST')?.value||'09:00',endTime=document.getElementById('epET')?.value||'11:00',obs=q('epObs'),rep1=q('epRep1'),rep2=q('epRep2');
+    if(!name)return alert('Informe o nome do processo.');
+    await fbUpdate(`/sessions/${sid}/processes/${pid}`,{name,deptId,trainerId,trainees,startTime,endTime,obs,rep1,rep2});closeModal();
+  }
+
+  // SAVE PROC CATALOG
+  else if(a==='save-proc-catalog'){
+    const sid=q('acSid'),catId=q('acCat'),cat=D.catalog[catId],deptId=q('acDept'),trainerId=q('acTr'),trainees=q('acTr2'),startTime=document.getElementById('acST')?.value||'09:00',endTime=document.getElementById('acET')?.value||'11:00',rep1=q('acRep1'),rep2=q('acRep2');
+    if(!sid||!catId)return alert('Selecione um processo do catálogo.');
+    const id=gi();await fbSet(`/sessions/${sid}/processes/${id}`,{id,name:cat.name,deptId,trainerId,trainees,status:'pendente',obs:cat.obs||'',startTime,endTime,rep1,rep2});closeModal();
+  }
+
+  // SAVE CATALOG
+  else if(a==='save-catalog'){
+    const name=q('catName'),duration=qi('catDur')||2,obs=q('catObs');
+    if(!name)return alert('Informe o nome do processo.');
+    const id=gi();await fbSet(`/catalog/${id}`,{id,name,duration,obs});closeModal();
+  }
+  else if(a==='save-edit-catalog'){
+    const id=q('ecId'),name=q('ecName'),duration=qi('ecDur')||2,obs=q('ecObs');
+    if(!name)return alert('Informe o nome.');
+    await fbUpdate(`/catalog/${id}`,{name,duration,obs});closeModal();
+  }
+
+  // SAVE CLIENT
+  else if(a==='save-client'){
+    const name=q('fcName'),startDate=q('fcDate');
+    if(!name)return alert('Informe o nome do cliente.');
+    const id=gi();await fbSet(`/clients/${id}`,{id,name,startDate,depts:{}});closeModal();
+  }
+  else if(a==='save-edit-client'){
+    const id=q('eclId'),name=q('eclName'),startDate=q('eclDate');
+    if(!name)return;
+    await fbUpdate(`/clients/${id}`,{name,startDate});closeModal();
+  }
+
+  // SAVE DEPT
+  else if(a==='save-dept'){
+    const cid=q('fdCid2'),name=q('fdDname');
+    if(!name)return;
+    const id=gi();await fbSet(`/clients/${cid}/depts/${id}`,{id,name});closeModal();
+  }
+  else if(a==='save-edit-dept'){
+    const cid=q('eddCid'),did=q('eddDid'),name=q('eddName');
+    if(!name)return;
+    await fbUpdate(`/clients/${cid}/depts/${did}`,{name});closeModal();
+  }
+  // REPLICADORES
+  else if(a==='save-rep'){
+    const cid=q('arCid'),name=q('arName'),dept=q('arDept');
+    if(!name)return alert('Informe o nome do replicador.');
+    const id=gi();
+    await fbSet(`/clients/${cid}/replicadores/${id}`,{id,name,dept});closeModal();
+  }
+  else if(a==='save-edit-rep'){
+    const cid=q('erCid'),rid=q('erRid'),name=q('erName'),dept=q('erDept');
+    if(!name)return;
+    await fbUpdate(`/clients/${cid}/replicadores/${rid}`,{name,dept});closeModal();
+  }
+  else if(a==='rm-rep'){
+    if(confirm('Remover replicador?'))await fbRemove(`/clients/${t.dataset.cid}/replicadores/${t.dataset.rid}`);
+  }
+  else if(a==='unmark-rep'){
+    const sid=t.dataset.sid; const rkey=t.dataset.rkey;
+    if(!rkey){alert('Chave de confirmação não encontrada.');return;}
+    if(confirm('Remover esta confirmação do replicador?\n\nEle precisará confirmar novamente pelo link.'))
+      await fbRemove(`/repconfirmations/${sid}/${rkey}`);
+  }
+
+  // SAVE USER
+  else if(a==='save-user'){
+    const uid=q('fuUid'),name=q('fuName'),email=q('fuEmail'),role=q('fuRole');
+    const clientIds={};document.querySelectorAll('.uck:checked').forEach(el=>clientIds[el.value]=true);
+    if(!uid||!name)return alert('UID e nome são obrigatórios.');
+    if(uid.length < 10)return alert('UID inválido. Copie o UID completo do Firebase Console — deve ter pelo menos 28 caracteres.');
+    if(D.users[uid])return alert(`Atenção: este UID já está cadastrado para "${D.users[uid].name||D.users[uid].email}". Para editar, use o botão ✎ na tabela.`);
+    await fbSet(`/users/${uid}`,{uid,name,email,role,clientIds});
+    closeModal();
+    alert(`Usuário "${name}" cadastrado com sucesso! Ele já pode fazer login com o e-mail e senha criados no Firebase.`);
+  }
+  else if(a==='save-edit-user'){
+    const uid=q('euUid'),name=q('euName'),email=q('euEmail'),role=q('euRole');
+    const clientIds={};document.querySelectorAll('.uck:checked').forEach(el=>clientIds[el.value]=true);
+    if(!name)return;
+    await fbUpdate(`/users/${uid}`,{name,email,role,clientIds});closeModal();
+  }
+
+  // REPLICATE
+  else if(a==='save-replicate'){
+    const sid=q('rpSid'),cid=q('rpCid'),date=q('rpDate'),orig=D.sessions[sid];
+    if(!cid)return alert('Selecione o cliente destino.');
+    const newId=gi();
+    const newSession={...orig,id:newId,clientId:cid,date:date||orig.date,processes:{}};
+    Object.values(orig.processes||{}).forEach(p=>{const pid=gi();newSession.processes[pid]={...p,id:pid,status:'pendente'};});
+    await fbSet(`/sessions/${newId}`,newSession);
+    closeModal();alert('Cronograma replicado com sucesso!');
+  }
+});
+
+document.addEventListener('change',e=>{
+  if(e.target.dataset.action==='fC'){S.fC=e.target.value;render();}
+  if(e.target.dataset.action==='fS'){S.fS=e.target.value;render();}
+  if(e.target.id==='ttSel'){S.ttDay=e.target.value;render();}
+});
+document.getElementById('ov').addEventListener('click',e=>{if(e.target===document.getElementById('ov'))closeModal();});
+</script>
+</body>
+</html>
