@@ -1014,31 +1014,53 @@ function renderClientes(){
             <div style="height:100%;width:${pct}%;background:var(--green);border-radius:4px;transition:width .5s;"></div>
           </div>
         </div>
-        <div style="display:flex;gap:14px;font-size:12px;">
+        <div style="display:flex;gap:14px;font-size:12px;flex-wrap:wrap;">
           <span>✅ <strong>${nConcluido}</strong> concluídos</span>
           <span>🟡 <strong>${nAgendado}</strong> agendados</span>
           <span>⬜ <strong>${nNenhum}</strong> não iniciados</span>
           <span style="color:var(--text3);">Total: ${total}</span>
         </div>
       </div>
-      <!-- Lista de processos -->
-      <div style="display:flex;flex-direction:column;gap:4px;">
-        ${cats.map(cat=>{
-          const key=cat.name.trim().toLowerCase();
-          const status=cov[key]||'nenhum';
-          const bg=status==='concluido'?'var(--green-bg)':status==='agendado'?'var(--amber-bg)':'var(--surface)';
-          const border=status==='concluido'?'var(--green-t)':status==='agendado'?'var(--amber)':'var(--border)';
-          const icon=status==='concluido'?'✅':status==='agendado'?'🟡':'⬜';
-          const label=status==='concluido'?'Concluído':status==='agendado'?'Agendado':'Não iniciado';
-          const labelColor=status==='concluido'?'var(--green-t)':status==='agendado'?'var(--amber-t)':'var(--text3)';
-          const textStyle=status==='concluido'?'text-decoration:line-through;color:var(--text2);':'';
-          return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:${bg};border:1px solid ${border};border-radius:var(--r);">
-            <span style="font-size:16px;flex-shrink:0;">${icon}</span>
-            <span style="flex:1;font-size:13px;${textStyle}">${cat.name}</span>
-            <span style="font-size:11px;font-weight:500;color:${labelColor};flex-shrink:0;">${label}</span>
+      <!-- Lista agrupada por categoria -->
+      ${(()=>{
+        const grps={};
+        cats.forEach(cat=>{const g=cat.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(cat);});
+        const gNames=Object.keys(grps).sort();
+        return gNames.map(g=>{
+          const gCats=grps[g];
+          const gDone=gCats.filter(cat=>cov[cat.name.trim().toLowerCase()]==='concluido').length;
+          const gTot=gCats.length;
+          const gPct=Math.round(gDone/gTot*100);
+          return `<div style="margin-bottom:14px;">
+            <!-- Cabeçalho da categoria -->
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+              <span style="font-size:12px;font-weight:600;color:var(--blue-t);background:var(--blue-bg);padding:3px 12px;border-radius:20px;">📂 ${g}</span>
+              <span style="font-size:11px;color:var(--text2);">${gDone}/${gTot}</span>
+              <div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden;max-width:100px;">
+                <div style="height:100%;width:${gPct}%;background:${gPct===100?'var(--green)':gPct>0?'var(--amber)':'var(--border2)'};border-radius:3px;"></div>
+              </div>
+            </div>
+            <!-- Processos da categoria -->
+            <div style="display:flex;flex-direction:column;gap:3px;">
+              ${gCats.map(cat=>{
+                const key=cat.name.trim().toLowerCase();
+                const status=cov[key]||'nenhum';
+                const bg=status==='concluido'?'var(--green-bg)':status==='agendado'?'var(--amber-bg)':'var(--surface)';
+                const border=status==='concluido'?'var(--green-t)':status==='agendado'?'var(--amber)':'var(--border)';
+                const icon=status==='concluido'?'✅':status==='agendado'?'🟡':'⬜';
+                const label=status==='concluido'?'Concluído':status==='agendado'?'Agendado':'Não iniciado';
+                const labelColor=status==='concluido'?'var(--green-t)':status==='agendado'?'var(--amber-t)':'var(--text3)';
+                const textStyle=status==='concluido'?'text-decoration:line-through;color:var(--text2);':'';
+                return `<div style="display:flex;align-items:center;gap:10px;padding:7px 12px 7px 20px;background:${bg};border:1px solid ${border};border-radius:var(--r);">
+                  <span style="font-size:14px;flex-shrink:0;">${icon}</span>
+                  <span style="flex:1;font-size:13px;${textStyle}">${cat.name}</span>
+                  <span style="font-size:11px;font-weight:500;color:${labelColor};flex-shrink:0;">${label}</span>
+                </div>`;
+              }).join('')}
+            </div>
           </div>`;
-        }).join('')}
-      </div>
+        }).join('');
+      })()}
     </div>`:''}
     `:''}
   </div>`;
