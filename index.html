@@ -362,7 +362,7 @@ const PSTAT = {pendente:{l:'Pendente',cls:'bi'},realizado:{l:'Realizado',cls:'bs
 const MOD = {remoto:{l:'Remoto',cls:'bgr'},presencial:{l:'Presencial',cls:'bs'}};
 
 // ── STATE ─────────────────────────────────────────────────────────────────
-let S = {view:'dashboard',exp:null,ttDay:null,fC:'',fS:''};
+let S = {view:'dashboard',exp:null,ttDay:null,fC:'',fS:'',clientTab:{}};
 let D = {users:{},clients:{},sessions:{},catalog:{}};
 let currentUser = null;
 let currentProfile = null;
@@ -889,24 +889,64 @@ function renderCatalogo(){
 }
 
 // ── CLIENTES ──────────────────────────────────────────────────────────────
+function coverageForClient(cid){
+  // Monta mapa: nome do processo → status para este cliente
+  const sessions=Object.values(D.sessions||{}).filter(s=>s.clientId===cid);
+  const map={}; // processName → 'concluido'|'agendado'
+  sessions.forEach(s=>{
+    Object.values(s.processes||{}).forEach(p=>{
+      const key=p.name.trim().toLowerCase();
+      const cur=map[key];
+      const isDone=p.status==='realizado'||p.status==='video';
+      if(!cur) map[key]=isDone?'concluido':'agendado';
+      else if(cur==='agendado'&&isDone) map[key]='concluido';
+    });
+  });
+  return map;
+}
+
 function renderClientes(){
   const cs=Object.values(D.clients||{});
+  // S.clientTab = {cid: 'config'|'cobertura'}
+  if(!S.clientTab) S.clientTab={};
   return `<div class="ph"><div><h2>Clientes</h2><p>Projetos, departamentos e replicadores</p></div><button class="btn btn-p" data-action="open-modal" data-modal="add-client">+ Novo cliente</button></div>
   ${cs.length===0?`<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum cliente cadastrado.<br><button class="btn btn-p" style="margin-top:12px;" data-action="open-modal" data-modal="add-client">+ Cadastrar primeiro cliente</button></div>`:''}
-  ${cs.map(c=>`<div class="day-card" style="margin-bottom:10px;">
-    <div style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;">
+  ${cs.map(c=>{
+    const tab=S.clientTab[c.id]||'config';
+    const cov=coverageForClient(c.id);
+    const cats=Object.values(D.catalog||{}).sort((a,b)=>a.name.localeCompare(b.name));
+    const total=cats.length;
+    const nConcluido=cats.filter(cat=>cov[cat.name.trim().toLowerCase()]==='concluido').length;
+    const nAgendado=cats.filter(cat=>cov[cat.name.trim().toLowerCase()]==='agendado').length;
+    const nNenhum=total-nConcluido-nAgendado;
+    const pct=total>0?Math.round(nConcluido/total*100):0;
+    return `<div class="day-card" style="margin-bottom:10px;">
+    <!-- CABEÇALHO DO CLIENTE -->
+    <div style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;align-items:center;gap:12px;">${av(c.name,34)}<div>
         <div style="font-weight:500;font-size:14px;">${c.name}</div>
-        <div style="font-size:11px;color:var(--text2);">Início: ${fd(c.startDate)} · ${Object.keys(c.depts||{}).length} depto(s) · ${Object.keys(c.replicadores||{}).length} replicador(es)</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">Início: ${fd(c.startDate)} · ${Object.keys(c.depts||{}).length} depto(s) · ${Object.keys(c.replicadores||{}).length} replicador(es)</div>
+        <div style="font-size:11px;margin-top:3px;display:flex;align-items:center;gap:6px;">
+          <span style="color:var(--green-t);font-weight:500;">✅ ${nConcluido} concluídos</span>
+          <span style="color:var(--amber);">🟡 ${nAgendado} agendados</span>
+          <span style="color:var(--text3);">⬜ ${nNenhum} não iniciados</span>
+        </div>
       </div></div>
       <div style="display:flex;gap:5px;align-items:center;">
         <button class="btn btn-i btn-sm" data-action="open-modal" data-modal="edit-client" data-id="${c.id}" title="Editar cliente">✎</button>
         <button style="color:var(--text2);font-size:16px;background:transparent;border:none;padding:4px 8px;" data-action="exp" data-id="${c.id}">${S.exp===c.id?'▲':'▼'}</button>
       </div>
     </div>
-    ${S.exp===c.id?`<div style="border-top:1px solid var(--border);padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:20px;">
 
-      <!-- DEPARTAMENTOS -->
+    ${S.exp===c.id?`
+    <!-- ABAS -->
+    <div style="border-top:1px solid var(--border);display:flex;gap:0;">
+      <button data-action="client-tab" data-cid="${c.id}" data-tab="config" style="flex:1;padding:10px;font-size:12px;font-weight:500;border:none;border-bottom:2px solid ${tab==='config'?'var(--blue)':'transparent'};background:${tab==='config'?'var(--blue-bg)':'var(--surface2)'};color:${tab==='config'?'var(--blue-t)':'var(--text2)'};cursor:pointer;">⚙ Configuração</button>
+      <button data-action="client-tab" data-cid="${c.id}" data-tab="cobertura" style="flex:1;padding:10px;font-size:12px;font-weight:500;border:none;border-bottom:2px solid ${tab==='cobertura'?'var(--blue)':'transparent'};background:${tab==='cobertura'?'var(--blue-bg)':'var(--surface2)'};color:${tab==='cobertura'?'var(--blue-t)':'var(--text2)'};cursor:pointer;">📊 Cobertura de processos <span style="background:${nConcluido>0?'var(--green-bg)':'var(--surface)'};color:${nConcluido>0?'var(--green-t)':'var(--text3)'};padding:1px 7px;border-radius:20px;font-size:11px;">${pct}%</span></button>
+    </div>
+
+    <!-- ABA CONFIGURAÇÃO -->
+    ${tab==='config'?`<div style="padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:20px;">
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <h4 style="font-size:12px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;">Departamentos</h4>
@@ -921,29 +961,62 @@ function renderClientes(){
           </div>`).join('')}
         </div>
       </div>
-
-      <!-- REPLICADORES -->
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
           <h4 style="font-size:12px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;">Replicadores</h4>
           <button class="btn btn-sm btn-p" data-action="open-modal" data-modal="add-rep" data-cid="${c.id}">+ Adicionar</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:4px;">
-          ${Object.values(c.replicadores||{}).length===0?`<span style="font-size:12px;color:var(--text2);">Nenhum replicador ainda.<br><span style="font-size:11px;">Replicadores são os responsáveis por aprender e repassar o conteúdo.</span></span>`:''}
+          ${Object.values(c.replicadores||{}).length===0?`<span style="font-size:12px;color:var(--text2);">Nenhum replicador ainda.</span>`:''}
           ${Object.values(c.replicadores||{}).map(r=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border-radius:var(--r);border:1px solid var(--border);">
             ${av(r.name,26)}
-            <div style="flex:1;min-width:0;">
-              <div style="font-size:12px;font-weight:500;">${r.name}</div>
-              ${r.dept?`<div style="font-size:11px;color:var(--text2);">${r.dept}</div>`:''}
-            </div>
+            <div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:500;">${r.name}</div>${r.dept?`<div style="font-size:11px;color:var(--text2);">${r.dept}</div>`:''}</div>
             <button class="btn btn-i btn-sm" style="padding:1px 6px;" data-action="open-modal" data-modal="edit-rep" data-cid="${c.id}" data-rid="${r.id}" title="Editar">✎</button>
             <button style="color:var(--red-t);font-size:13px;line-height:1;border:none;background:transparent;cursor:pointer;" data-action="rm-rep" data-cid="${c.id}" data-rid="${r.id}">×</button>
           </div>`).join('')}
         </div>
       </div>
-
     </div>`:''}
-  </div>`).join('')}`;
+
+    <!-- ABA COBERTURA -->
+    ${tab==='cobertura'?`<div style="padding:16px 18px;">
+      <!-- Barra de progresso geral -->
+      <div style="background:var(--surface2);border-radius:var(--r);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:180px;">
+          <div style="font-size:12px;color:var(--text2);margin-bottom:5px;">Progresso da implantação</div>
+          <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:var(--green);border-radius:4px;transition:width .5s;"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:14px;font-size:12px;">
+          <span>✅ <strong>${nConcluido}</strong> concluídos</span>
+          <span>🟡 <strong>${nAgendado}</strong> agendados</span>
+          <span>⬜ <strong>${nNenhum}</strong> não iniciados</span>
+          <span style="color:var(--text3);">Total: ${total}</span>
+        </div>
+      </div>
+      <!-- Lista de processos -->
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        ${cats.map(cat=>{
+          const key=cat.name.trim().toLowerCase();
+          const status=cov[key]||'nenhum';
+          const bg=status==='concluido'?'var(--green-bg)':status==='agendado'?'var(--amber-bg)':'var(--surface)';
+          const border=status==='concluido'?'var(--green-t)':status==='agendado'?'var(--amber)':'var(--border)';
+          const icon=status==='concluido'?'✅':status==='agendado'?'🟡':'⬜';
+          const label=status==='concluido'?'Concluído':status==='agendado'?'Agendado':'Não iniciado';
+          const labelColor=status==='concluido'?'var(--green-t)':status==='agendado'?'var(--amber-t)':'var(--text3)';
+          const textStyle=status==='concluido'?'text-decoration:line-through;color:var(--text2);':'';
+          return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:${bg};border:1px solid ${border};border-radius:var(--r);">
+            <span style="font-size:16px;flex-shrink:0;">${icon}</span>
+            <span style="flex:1;font-size:13px;${textStyle}">${cat.name}</span>
+            <span style="font-size:11px;font-weight:500;color:${labelColor};flex-shrink:0;">${label}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`:''}
+    `:''}
+  </div>`;
+  }).join('')}`;
 }
 
 // ── ADMIN ─────────────────────────────────────────────────────────────────
@@ -1431,6 +1504,7 @@ document.addEventListener('click',async e=>{
   }
   else if(a==='nav'){S.view=t.dataset.view;S.exp=null;closeSidebar();render();}
   else if(a==='exp'){S.exp=S.exp===t.dataset.id?null:t.dataset.id;render();}
+  else if(a==='client-tab'){S.clientTab[t.dataset.cid]=t.dataset.tab;render();}
   else if(a==='goto-h'){S.view='horarios';S.ttDay=t.dataset.sid;render();}
   else if(a==='open-modal'){const d={};['sid','cid','pid','id','did'].forEach(k=>{if(t.dataset[k])d[k]=t.dataset[k];});openModal(t.dataset.modal,d);}
   else if(a==='close-modal'){closeModal();}
