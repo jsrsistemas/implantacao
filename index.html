@@ -10,7 +10,7 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
 button{cursor:pointer;font-family:inherit;}
 input,select,textarea{font-family:inherit;}
-::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
+::-webkit-seight:5px;}::-crollbar{width:5px;hwebkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
 #login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
 #login-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--rl);padding:40px 36px;width:100%;max-width:400px;box-shadow:0 4px 32px rgba(0,0,0,.08);}
 #login-err{background:var(--red-bg);color:var(--red-t);border-radius:var(--r);padding:10px 13px;font-size:13px;margin-bottom:16px;display:none;}
@@ -895,21 +895,13 @@ function renderCatalogo(){
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <div style="font-size:13px;font-weight:600;color:var(--blue-t);background:var(--blue-bg);padding:4px 14px;border-radius:20px;">📂 ${g}</div>
         <span style="font-size:11px;color:var(--text2);">${groups[g].length} processo(s)</span>
-        <span style="font-size:10px;color:var(--text3);">Use ▲▼ para ordenar</span>
       </div>
       <div class="card" style="overflow:hidden;">
         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
         <table class="tbl" style="min-width:480px;">
-          <thead><tr><th style="width:36px;"></th><th>#</th><th>Nome do processo</th><th>Duração</th><th>Observação padrão</th><th style="text-align:center;">Ações</th></tr></thead>
-          <tbody>${groups[g].map((cat,i)=>{
-            const isFirst=i===0; const isLast=i===groups[g].length-1;
-            return `<tr>
-            <td style="padding:4px 6px;">
-              <div style="display:flex;flex-direction:column;gap:1px;">
-                <button class="btn btn-sm" style="padding:1px 6px;font-size:10px;${isFirst?'opacity:.3;cursor:default;':''}" data-action="move-catalog" data-id="${cat.id}" data-group="${encodeURIComponent(g)}" data-dir="up" ${isFirst?'disabled':''}>▲</button>
-                <button class="btn btn-sm" style="padding:1px 6px;font-size:10px;${isLast?'opacity:.3;cursor:default;':''}" data-action="move-catalog" data-id="${cat.id}" data-group="${encodeURIComponent(g)}" data-dir="down" ${isLast?'disabled':''}>▼</button>
-              </div>
-            </td>
+          <thead><tr><th style="width:28px;"></th><th>#</th><th>Nome do processo</th><th>Duração</th><th>Observação padrão</th><th style="text-align:center;">Ações</th></tr></thead>
+          <tbody class="cat-drag-list" data-group="${encodeURIComponent(g)}">${groups[g].map((cat,i)=>`<tr class="cat-drag-row" data-id="${cat.id}" draggable="true">
+            <td style="padding:4px 8px;cursor:grab;color:var(--text3);font-size:18px;text-align:center;user-select:none;" class="cat-drag-handle" title="Arrastar para reordenar">⠿</td>
             <td style="color:var(--text3);font-size:11px;">${i+1}</td>
             <td style="font-weight:500;">${cat.name}</td>
             <td style="color:var(--text2);">${cat.duration||2}h</td>
@@ -920,8 +912,7 @@ function renderCatalogo(){
                 <button class="btn btn-d btn-sm" data-action="rm-catalog" data-id="${cat.id}" title="Remover">×</button>
               </div>
             </td>
-          </tr>`;
-          }).join('')}</tbody>
+          </tr>`).join('')}</tbody>
         </table>
         </div>
       </div>
@@ -1593,13 +1584,62 @@ function initDragDrop(){
   });
 }
 
-function render(){
+function initCatalogDragDrop(){
+  document.querySelectorAll('.cat-drag-list').forEach(tbody=>{
+    const g=decodeURIComponent(tbody.dataset.group||'');
+    let dragging=null;
+
+    tbody.querySelectorAll('.cat-drag-row').forEach(row=>{
+      row.addEventListener('dragstart',e=>{
+        dragging=row;
+        setTimeout(()=>{ row.style.opacity='.35'; },0);
+        e.dataTransfer.effectAllowed='move';
+        e.dataTransfer.setData('text/plain',row.dataset.id);
+      });
+
+      row.addEventListener('dragend',()=>{
+        row.style.opacity='';
+        tbody.querySelectorAll('.cat-drag-row').forEach(r=>r.style.borderTop='');
+        dragging=null;
+        // Salva nova ordem no Firebase
+        const rows=[...tbody.querySelectorAll('.cat-drag-row')];
+        const updates={};
+        rows.forEach((r,i)=>{ if(r.dataset.id) updates[`/catalog/${r.dataset.id}/order`]=i; });
+        if(Object.keys(updates).length){
+          import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js')
+            .then(({getDatabase,ref,update})=>update(ref(getDatabase()),updates))
+            .catch(()=>{});
+        }
+        // Atualiza numeração visual
+        rows.forEach((r,i)=>{
+          const numCell=r.querySelectorAll('td')[1];
+          if(numCell) numCell.textContent=i+1;
+        });
+      });
+
+      row.addEventListener('dragover',e=>{
+        e.preventDefault();
+        if(!dragging||dragging===row)return;
+        tbody.querySelectorAll('.cat-drag-row').forEach(r=>r.style.borderTop='');
+        const rect=row.getBoundingClientRect();
+        const mid=rect.top+rect.height/2;
+        if(e.clientY<mid){
+          row.style.borderTop='2px solid var(--blue)';
+          tbody.insertBefore(dragging,row);
+        } else {
+          row.style.borderTop='';
+          tbody.insertBefore(dragging,row.nextSibling);
+        }
+      });
+    });
+  });
+}
   renderSidebar();
   const ct=document.getElementById('content');
   if(S.view==='dashboard')ct.innerHTML=renderDashboard();
   else if(S.view==='cronograma'){ct.innerHTML=renderCronograma();setTimeout(initDragDrop,50);}
   else if(S.view==='horarios')ct.innerHTML=renderHorarios();
-  else if(S.view==='catalogo')ct.innerHTML=renderCatalogo();
+  else if(S.view==='catalogo'){ct.innerHTML=renderCatalogo();setTimeout(initCatalogDragDrop,50);}
   else if(S.view==='clientes')ct.innerHTML=renderClientes();
   else if(S.view==='admin')ct.innerHTML=renderAdmin();
 }
