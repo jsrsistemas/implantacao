@@ -349,6 +349,8 @@ const av = (n,sz=30) => `<div class="av" style="width:${sz}px;height:${sz}px;bac
 const fd = d => { try{return new Date(d+'T00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});}catch(e){return d||'';} };
 const fdd = d => { try{return new Date(d+'T00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'});}catch(e){return d||'';} };
 const fdw = d => { try{return new Date(d+'T00:00').toLocaleDateString('pt-BR',{weekday:'short'}).toUpperCase();}catch(e){return '';} };
+// Data com dia da semana abreviado: "27 abr · Seg"
+const fdws = d => { try{const dt=new Date(d+'T00:00');const day=dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});const wk=dt.toLocaleDateString('pt-BR',{weekday:'short'});return `${day} · ${wk.charAt(0).toUpperCase()+wk.slice(1)}`;}catch(e){return d||'';} };
 const t2m = t => { const[h,m]=(t||'00:00').split(':').map(Number);return h*60+(m||0); };
 const m2t = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 const pcol = p => p>=70?'var(--green)':p>=40?'var(--amber)':'var(--blue)';
@@ -639,7 +641,7 @@ function renderDashboard(){
           <div style="padding:7px 14px;background:var(--surface2);display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
             <span style="font-size:10px;font-weight:600;color:var(--text2);min-width:28px;">${fdw(s.date)}</span>
             <span style="font-size:13px;font-weight:500;">${s.label}</span>
-            <span style="font-size:11px;color:var(--text2);">${fd(s.date)}</span>
+            <span style="font-size:11px;color:var(--text2);">${fdws(s.date)}</span>
             <span class="badge ${MOD[s.modality]?.cls||'bgr'}" style="font-size:9px;">${MOD[s.modality]?.l||s.modality}</span>
             ${s.notes?`<span style="font-size:11px;color:var(--text2);font-style:italic;">${s.notes}</span>`:''}
             <span style="margin-left:auto;font-size:11px;color:var(--text2);">${sDone}/${procs.length}</span>
@@ -706,7 +708,7 @@ function renderCronograma(){
         <!-- Linha 1: Info do dia + clique para expandir -->
         <div data-action="exp" data-id="${s.id}" style="cursor:pointer;display:flex;align-items:center;gap:12px;margin-bottom:10px;">
           <div style="min-width:52px;flex-shrink:0;">
-            <div style="font-size:12px;font-weight:500;">${fd(s.date)}</div>
+            <div style="font-size:12px;font-weight:500;">${fdws(s.date)}</div>
             <span class="badge ${MOD[s.modality]?.cls||'bgr'}" style="margin-top:3px;font-size:9px;">${MOD[s.modality]?.l||s.modality}</span>
           </div>
           <div style="flex:1;min-width:0;">
@@ -858,7 +860,7 @@ function renderHorarios(){
   <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
     <label style="font-size:12px;color:var(--text2);font-weight:500;">Selecionar dia:</label>
     <select class="inp" style="width:auto;font-size:13px;" id="ttSel">
-      ${ss.map(s=>{const cl=gc(s.clientId);return`<option value="${s.id}"${selSid===s.id?' selected':''}>${s.label} — ${fd(s.date)} (${cl?.name||''})</option>`;}).join('')}
+      ${ss.map(s=>{const cl=gc(s.clientId);return`<option value="${s.id}"${selSid===s.id?' selected':''}>${s.label} — ${fdws(s.date)} (${cl?.name||''})</option>`;}).join('')}
     </select>
     ${selS?`<span style="font-size:12px;color:var(--text2);">📅 ${fdd(selS.date)} · <span class="badge ${MOD[selS.modality]?.cls||'bgr'}">${MOD[selS.modality]?.l||''}</span>${selS.notes?` · ${selS.notes}`:''}</span>`:''}
   </div>
@@ -869,7 +871,10 @@ function renderHorarios(){
 function renderCatalogo(){
   const cats=Object.values(D.catalog||{}).sort((a,b)=>{
     const ca=a.category||'Geral'; const cb=b.category||'Geral';
-    return ca.localeCompare(cb)||a.name.localeCompare(b.name);
+    const catOrder=ca.localeCompare(cb);
+    if(catOrder!==0)return catOrder;
+    // Dentro da categoria, ordena pelo campo order, depois pelo nome
+    return (a.order??999)-(b.order??999)||a.name.localeCompare(b.name);
   });
   // Agrupa por categoria
   const groups={};
@@ -890,12 +895,21 @@ function renderCatalogo(){
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
         <div style="font-size:13px;font-weight:600;color:var(--blue-t);background:var(--blue-bg);padding:4px 14px;border-radius:20px;">📂 ${g}</div>
         <span style="font-size:11px;color:var(--text2);">${groups[g].length} processo(s)</span>
+        <span style="font-size:10px;color:var(--text3);">Use ▲▼ para ordenar</span>
       </div>
       <div class="card" style="overflow:hidden;">
         <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
         <table class="tbl" style="min-width:480px;">
-          <thead><tr><th>#</th><th>Nome do processo</th><th>Duração</th><th>Observação padrão</th><th style="text-align:center;">Ações</th></tr></thead>
-          <tbody>${groups[g].map((cat,i)=>`<tr>
+          <thead><tr><th style="width:36px;"></th><th>#</th><th>Nome do processo</th><th>Duração</th><th>Observação padrão</th><th style="text-align:center;">Ações</th></tr></thead>
+          <tbody>${groups[g].map((cat,i)=>{
+            const isFirst=i===0; const isLast=i===groups[g].length-1;
+            return `<tr>
+            <td style="padding:4px 6px;">
+              <div style="display:flex;flex-direction:column;gap:1px;">
+                <button class="btn btn-sm" style="padding:1px 6px;font-size:10px;${isFirst?'opacity:.3;cursor:default;':''}" data-action="move-catalog" data-id="${cat.id}" data-group="${encodeURIComponent(g)}" data-dir="up" ${isFirst?'disabled':''}>▲</button>
+                <button class="btn btn-sm" style="padding:1px 6px;font-size:10px;${isLast?'opacity:.3;cursor:default;':''}" data-action="move-catalog" data-id="${cat.id}" data-group="${encodeURIComponent(g)}" data-dir="down" ${isLast?'disabled':''}>▼</button>
+              </div>
+            </td>
             <td style="color:var(--text3);font-size:11px;">${i+1}</td>
             <td style="font-weight:500;">${cat.name}</td>
             <td style="color:var(--text2);">${cat.duration||2}h</td>
@@ -906,7 +920,8 @@ function renderCatalogo(){
                 <button class="btn btn-d btn-sm" data-action="rm-catalog" data-id="${cat.id}" title="Remover">×</button>
               </div>
             </td>
-          </tr>`).join('')}</tbody>
+          </tr>`;
+          }).join('')}</tbody>
         </table>
         </div>
       </div>
@@ -916,19 +931,32 @@ function renderCatalogo(){
 
 // ── CLIENTES ──────────────────────────────────────────────────────────────
 function coverageForClient(cid){
-  // Monta mapa: nome do processo → status para este cliente
+  // Monta mapa de cobertura: catalogId → status (prioritário) + nome → status (fallback)
   const sessions=Object.values(D.sessions||{}).filter(s=>s.clientId===cid);
-  const map={}; // processName → 'concluido'|'agendado'
+  const byId={};   // catalogId → status
+  const byName={}; // nome.lower → status
   sessions.forEach(s=>{
     Object.values(s.processes||{}).forEach(p=>{
-      const key=p.name.trim().toLowerCase();
-      const cur=map[key];
       const isDone=p.status==='realizado'||p.status==='video';
-      if(!cur) map[key]=isDone?'concluido':'agendado';
-      else if(cur==='agendado'&&isDone) map[key]='concluido';
+      const st=isDone?'concluido':'agendado';
+      // Por ID (mais confiável)
+      if(p.catalogId){
+        const cur=byId[p.catalogId];
+        if(!cur||cur==='agendado'&&isDone) byId[p.catalogId]=st;
+      }
+      // Por nome (fallback para processos antigos sem catalogId)
+      const key=p.name.trim().toLowerCase();
+      const cur=byName[key];
+      if(!cur||cur==='agendado'&&isDone) byName[key]=st;
     });
   });
-  return map;
+  return {byId, byName};
+}
+
+// Resolve status de um processo do catálogo para um cliente
+function covStatus(cov, cat){
+  if(cov.byId[cat.id]) return cov.byId[cat.id];
+  return cov.byName[cat.name.trim().toLowerCase()]||'nenhum';
 }
 
 function renderClientes(){
@@ -942,8 +970,8 @@ function renderClientes(){
     const cov=coverageForClient(c.id);
     const cats=Object.values(D.catalog||{}).sort((a,b)=>a.name.localeCompare(b.name));
     const total=cats.length;
-    const nConcluido=cats.filter(cat=>cov[cat.name.trim().toLowerCase()]==='concluido').length;
-    const nAgendado=cats.filter(cat=>cov[cat.name.trim().toLowerCase()]==='agendado').length;
+    const nConcluido=cats.filter(cat=>covStatus(cov,cat)==='concluido').length;
+    const nAgendado=cats.filter(cat=>covStatus(cov,cat)==='agendado').length;
     const nNenhum=total-nConcluido-nAgendado;
     const pct=total>0?Math.round(nConcluido/total*100):0;
     return `<div class="day-card" style="margin-bottom:10px;">
@@ -951,7 +979,7 @@ function renderClientes(){
     <div style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
       <div style="display:flex;align-items:center;gap:12px;">${av(c.name,34)}<div>
         <div style="font-weight:500;font-size:14px;">${c.name}</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px;">Início: ${fd(c.startDate)} · ${Object.keys(c.depts||{}).length} depto(s) · ${Object.keys(c.replicadores||{}).length} replicador(es)</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">Início: ${fdws(c.startDate)} · ${Object.keys(c.depts||{}).length} depto(s) · ${Object.keys(c.replicadores||{}).length} replicador(es)</div>
         <div style="font-size:11px;margin-top:3px;display:flex;align-items:center;gap:6px;">
           <span style="color:var(--green-t);font-weight:500;">✅ ${nConcluido} concluídos</span>
           <span style="color:var(--amber);">🟡 ${nAgendado} agendados</span>
@@ -1028,7 +1056,7 @@ function renderClientes(){
         const gNames=Object.keys(grps).sort();
         return gNames.map(g=>{
           const gCats=grps[g];
-          const gDone=gCats.filter(cat=>cov[cat.name.trim().toLowerCase()]==='concluido').length;
+          const gDone=gCats.filter(cat=>covStatus(cov,cat)==='concluido').length;
           const gTot=gCats.length;
           const gPct=Math.round(gDone/gTot*100);
           return `<div style="margin-bottom:14px;">
@@ -1043,8 +1071,7 @@ function renderClientes(){
             <!-- Processos da categoria -->
             <div style="display:flex;flex-direction:column;gap:3px;">
               ${gCats.map(cat=>{
-                const key=cat.name.trim().toLowerCase();
-                const status=cov[key]||'nenhum';
+                const status=covStatus(cov,cat);
                 const bg=status==='concluido'?'var(--green-bg)':status==='agendado'?'var(--amber-bg)':'var(--surface)';
                 const border=status==='concluido'?'var(--green-t)':status==='agendado'?'var(--amber)':'var(--border)';
                 const icon=status==='concluido'?'✅':status==='agendado'?'🟡':'⬜';
@@ -1202,8 +1229,7 @@ function openModal(type,data={}){
             return gNames.map(g=>{
               const header=`<div class="cat-group-header" style="padding:6px 12px;background:var(--blue-bg);font-size:10px;font-weight:600;color:var(--blue-t);letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);position:sticky;top:0;">📂 ${g}</div>`;
               const rows=grps[g].map(cat=>{
-                const key=cat.name.trim().toLowerCase();
-                const status=cov[key]||'nenhum';
+                const status=covStatus(cov,cat);
                 const bg=status==='concluido'?'var(--green-bg)':status==='agendado'?'var(--amber-bg)':'var(--surface)';
                 const icon=status==='concluido'?'✅':status==='agendado'?'🟡':'⬜';
                 const label=status==='concluido'?' · Concluído':status==='agendado'?' · Agendado':'';
@@ -1674,7 +1700,26 @@ document.addEventListener('click',async e=>{
     await fbUpdate(`/sessions/${sid}/processes/${b2.id}`,{order:aOrd});
   }
   else if(a==='rm-catalog'){if(confirm('Remover do catálogo?'))await fbRemove(`/catalog/${t.dataset.id}`);}
-  else if(a==='rm-user'){
+  else if(a==='move-catalog'){
+    const id=t.dataset.id;
+    const dir=t.dataset.dir;
+    const g=decodeURIComponent(t.dataset.group);
+    // Pega os itens da mesma categoria ordenados
+    const grpItems=Object.values(D.catalog||{})
+      .filter(c=>(c.category||'Geral')===g)
+      .sort((a,b)=>(a.order??999)-(b.order??999)||a.name.localeCompare(b.name));
+    const idx=grpItems.findIndex(c=>c.id===id);
+    if(idx<0)return;
+    const swapIdx=dir==='up'?idx-1:idx+1;
+    if(swapIdx<0||swapIdx>=grpItems.length)return;
+    const a2=grpItems[idx]; const b2=grpItems[swapIdx];
+    // Usa posição como base de ordem se campo order não existir
+    const aOrd=a2.order??idx; const bOrd=b2.order??swapIdx;
+    const updates={};
+    updates[`/catalog/${a2.id}/order`]=bOrd;
+    updates[`/catalog/${b2.id}/order`]=aOrd;
+    await fbUpdate('/',updates);
+  }  else if(a==='rm-user'){
     const name=t.dataset.name||'este usuário';
     if(!confirm(`Remover o acesso de "${name}"?\n\nIsso remove o perfil do painel, mas não apaga o login no Firebase. Para revogar o acesso completamente, exclua também no Firebase Console → Authentication.`))return;
     await fbRemove(`/users/${t.dataset.id}`);
@@ -1708,7 +1753,7 @@ document.addEventListener('click',async e=>{
   else if(a==='save-proc-catalog'){
     const sid=q('acSid'),catId=q('acCat'),cat=D.catalog[catId],deptId=q('acDept'),trainerId=q('acTr'),trainees=q('acTr2'),startTime=document.getElementById('acST')?.value||'09:00',endTime=document.getElementById('acET')?.value||'11:00',rep1=q('acRep1'),rep2=q('acRep2');
     if(!sid||!catId)return alert('Selecione um processo do catálogo.');
-    const id=gi();await fbSet(`/sessions/${sid}/processes/${id}`,{id,name:cat.name,deptId,trainerId,trainees,status:'pendente',obs:cat.obs||'',startTime,endTime,rep1,rep2});closeModal();
+    const id=gi();await fbSet(`/sessions/${sid}/processes/${id}`,{id,name:cat.name,catalogId:catId,deptId,trainerId,trainees,status:'pendente',obs:cat.obs||'',startTime,endTime,rep1,rep2});closeModal();
   }
 
   // SAVE CATALOG
