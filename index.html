@@ -1391,13 +1391,50 @@ function openModal(type,data={}){
   // ── REPLICAR ──
   } else if(type==='replicate'){
     const s=D.sessions[data.sid];
-    title='Replicar cronograma';
+    const c=gc(s?.clientId);
+    title='Copiar dia de treinamento';
     body=`<input type="hidden" id="rpSid" value="${data.sid}">
-    <p style="font-size:13px;color:var(--text2);margin-bottom:14px;">Copia <strong>${s?.label}</strong> com todos os processos para outro cliente.</p>
     <div style="display:flex;flex-direction:column;gap:12px;">
-      <div><label class="lbl">Cliente destino</label><select class="inp" id="rpCid"><option value="">Selecione...</option>${clientOpts(s?.clientId)}</select></div>
-      <div><label class="lbl">Nova data</label><input type="date" class="inp" id="rpDate" value="${s?.date||''}"></div>
-      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-replicate">Replicar</button></div>
+
+      <!-- Destino -->
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <label class="lbl">Copiar para</label>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--blue-bg);border:2px solid var(--blue);border-radius:var(--r);cursor:pointer;">
+          <input type="radio" name="rpDest" id="rpDestSame" value="same" checked style="accent-color:var(--blue);">
+          <div>
+            <div style="font-size:13px;font-weight:500;color:var(--blue-t);">Mesma implantação — ${c?.name||''}</div>
+            <div style="font-size:11px;color:var(--blue-t);opacity:.8;">Repete o dia dentro do mesmo cliente</div>
+          </div>
+        </label>
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:2px solid var(--border);border-radius:var(--r);cursor:pointer;" onclick="document.getElementById('rpOtherFields').style.display='block';document.querySelector('label:has(#rpDestSame)').style.borderColor='var(--border)';document.querySelector('label:has(#rpDestSame)').style.background='var(--surface2)';this.style.borderColor='var(--blue)';this.style.background='var(--blue-bg)';">
+          <input type="radio" name="rpDest" id="rpDestOther" value="other" style="accent-color:var(--blue);" onchange="document.getElementById('rpOtherFields').style.display='block';">
+          <div>
+            <div style="font-size:13px;font-weight:500;">Outro cliente</div>
+            <div style="font-size:11px;color:var(--text2);">Leva o cronograma para outra implantação</div>
+          </div>
+        </label>
+      </div>
+
+      <!-- Campo cliente (só aparece se "outro cliente") -->
+      <div id="rpOtherFields" style="display:none;">
+        <label class="lbl">Cliente destino</label>
+        <select class="inp" id="rpCid"><option value="">Selecione...</option>${clientOpts(s?.clientId)}</select>
+      </div>
+
+      <!-- Nova data e rótulo -->
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;"><label class="lbl">Nova data</label><input type="date" class="inp" id="rpDate" value="${s?.date||''}"></div>
+        <div style="flex:1;"><label class="lbl">Novo rótulo</label><input class="inp" id="rpLabel" value="${esc(s?.label||'')}" placeholder="Ex: 2° Dia"></div>
+      </div>
+
+      <div style="background:var(--surface2);border-radius:var(--r);padding:10px 12px;font-size:12px;color:var(--text2);">
+        📋 Serão copiados <strong>${Object.keys(s?.processes||{}).length} processo(s)</strong> — todos voltarão para status <strong>Pendente</strong>
+      </div>
+
+      <div style="display:flex;gap:9px;justify-content:flex-end;">
+        <button class="btn" data-action="close-modal">Cancelar</button>
+        <button class="btn btn-p" data-action="save-replicate">⧉ Copiar dia</button>
+      </div>
     </div>`;
   }
 
@@ -1950,13 +1987,28 @@ document.addEventListener('click',async e=>{
 
   // REPLICATE
   else if(a==='save-replicate'){
-    const sid=q('rpSid'),cid=q('rpCid'),date=q('rpDate'),orig=D.sessions[sid];
-    if(!cid)return alert('Selecione o cliente destino.');
+    const sid=q('rpSid');
+    const orig=D.sessions[sid];
+    if(!orig)return;
+    const date=q('rpDate')||orig.date;
+    const label=q('rpLabel')||orig.label;
+    const destType=document.querySelector('input[name="rpDest"]:checked')?.value||'same';
+    // Define cliente destino
+    let cid=orig.clientId;
+    if(destType==='other'){
+      cid=q('rpCid');
+      if(!cid)return alert('Selecione o cliente destino.');
+    }
+    if(!date)return alert('Informe a nova data.');
     const newId=gi();
-    const newSession={...orig,id:newId,clientId:cid,date:date||orig.date,processes:{}};
-    Object.values(orig.processes||{}).forEach(p=>{const pid=gi();newSession.processes[pid]={...p,id:pid,status:'pendente'};});
+    const newSession={...orig,id:newId,clientId:cid,date,label,notes:orig.notes||'',modality:orig.modality||'presencial',processes:{}};
+    Object.values(orig.processes||{}).forEach(p=>{
+      const pid=gi();
+      newSession.processes[pid]={...p,id:pid,status:'pendente'};
+    });
     await fbSet(`/sessions/${newId}`,newSession);
-    closeModal();alert('Cronograma replicado com sucesso!');
+    closeModal();
+    alert(`✅ Dia copiado com sucesso!\n\n"${label}" — ${date?new Date(date+'T00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'}):''}`);
   }
 });
 
