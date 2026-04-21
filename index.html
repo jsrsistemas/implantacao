@@ -649,7 +649,7 @@ function renderDashboard(){
           <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
           <div style="min-width:500px;">
           <div class="dash-proc-row dash-head">
-            <div>Processo</div><div>Horário</div><div>Departamento</div><div>Responsável</div><div>Treinandos</div><div>Status</div>
+            <div>Processo</div><div>Horário</div><div>Departamento</div><div>Responsável</div><div>Envolvidos</div><div>Status</div>
           </div>
           ${procs.map(proc=>{
             const tr=gu(proc.trainerId);const dept=c.depts?.[proc.deptId];
@@ -822,7 +822,7 @@ function renderHorarios(){
           <th>Processo</th>
           <th style="width:150px;">Departamento</th>
           <th style="width:130px;">Responsável</th>
-          <th>Treinandos</th>
+          <th>Envolvidos</th>
           <th style="width:100px;">Status</th>
         </tr></thead>
         <tbody>
@@ -1159,7 +1159,7 @@ function openModal(type,data={}){
       <div><label class="lbl">Nome do processo</label><input class="inp" id="fpName" placeholder="Ex: Cadastro de produto"></div>
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Departamento</label><select class="inp" id="fpDept"><option value="">Selecione...</option>${dOpts(cl,'')}</select></div><div style="flex:1;"><label class="lbl">Responsável (consultor)</label><select class="inp" id="fpTr"><option value="">Selecione...</option>${tOpts('')}</select></div></div>
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Início</label><input type="time" class="inp" id="fpST" value="09:00"></div><div style="flex:1;"><label class="lbl">Fim</label><input type="time" class="inp" id="fpET" value="11:00"></div></div>
-      <div><label class="lbl">Treinandos (lista geral)</label><input class="inp" id="fpTr2" placeholder="Ex: Natasha / Érica / Rafael"></div>
+      <div><label class="lbl">Envolvidos no treinamento</label><input class="inp" id="fpTr2" placeholder="Ex: Natasha, Érica, Rafael"></div>
       <div style="background:var(--blue-bg);border-radius:var(--r);padding:11px;margin-top:2px;">
         <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores — responsáveis por aprender e repassar o conteúdo</div>
         <div style="display:flex;gap:10px;">
@@ -1178,7 +1178,7 @@ function openModal(type,data={}){
       <div><label class="lbl">Nome do processo</label><input class="inp" id="epName" value="${esc(proc?.name||'')}"></div>
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Departamento</label><select class="inp" id="epDept"><option value="">Selecione...</option>${dOpts(cl,proc?.deptId)}</select></div><div style="flex:1;"><label class="lbl">Responsável (consultor)</label><select class="inp" id="epTr"><option value="">Selecione...</option>${tOpts(proc?.trainerId)}</select></div></div>
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Início</label><input type="time" class="inp" id="epST" value="${proc?.startTime||'09:00'}"></div><div style="flex:1;"><label class="lbl">Fim</label><input type="time" class="inp" id="epET" value="${proc?.endTime||'11:00'}"></div></div>
-      <div><label class="lbl">Treinandos (lista geral)</label><input class="inp" id="epTr2" value="${esc(proc?.trainees||'')}"></div>
+      <div><label class="lbl">Envolvidos no treinamento</label><input class="inp" id="epTr2" value="${esc(proc?.trainees||'')}"></div>
       <div style="background:var(--blue-bg);border-radius:var(--r);padding:11px;">
         <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores — responsáveis por aprender e repassar o conteúdo</div>
         <div style="display:flex;gap:10px;">
@@ -1194,16 +1194,19 @@ function openModal(type,data={}){
   } else if(type==='add-proc-catalog'){
     const s=D.sessions[data.sid];const cl=gc(s?.clientId);
     const cov=cl?coverageForClient(cl.id):{};
-    const cats=Object.values(D.catalog||{}).sort((a,b)=>a.name.localeCompare(b.name));
-    title='Adicionar processo do catálogo';
+    // Ordena por categoria → order → nome (igual ao catálogo)
+    const cats=Object.values(D.catalog||{}).sort((a,b)=>{
+      const ca=a.category||'Geral'; const cb=b.category||'Geral';
+      return ca.localeCompare(cb)||(a.order??999)-(b.order??999)||a.name.localeCompare(b.name);
+    });
+    title='Adicionar processos do catálogo';
     body=`<input type="hidden" id="acSid" value="${data.sid}">
-    <input type="hidden" id="acCat" value="">
     <div style="display:flex;flex-direction:column;gap:12px;">
 
-      <!-- LISTA VISUAL DO CATÁLOGO -->
+      <!-- LISTA MULTI-SELEÇÃO -->
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
-          <label class="lbl" style="margin:0;">Selecione o processo</label>
+          <label class="lbl" style="margin:0;">Selecione um ou mais processos</label>
           <div style="display:flex;gap:4px;flex-wrap:wrap;">
             <span style="font-size:10px;padding:2px 7px;background:var(--surface2);border-radius:20px;">⬜ Não iniciado</span>
             <span style="font-size:10px;padding:2px 7px;background:var(--amber-bg);border-radius:20px;">🟡 Agendado</span>
@@ -1211,23 +1214,30 @@ function openModal(type,data={}){
           </div>
         </div>
         <input class="inp" id="acSearch" placeholder="🔍 Buscar processo..." style="margin-bottom:8px;" oninput="filterCatalogList(this.value)">
-        <div id="acList" style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r);">
+        <div id="acList" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r);">
           ${(()=>{
-            // Agrupa por categoria
             const grps={};
             cats.forEach(cat=>{const g=cat.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(cat);});
-            const gNames=Object.keys(grps).sort();
+            // Ordena categorias pelo menor order dos seus itens (mantém mesma ordem do catálogo)
+            const gNames=Object.keys(grps).sort((a,b)=>{
+              const minA=Math.min(...grps[a].map(c=>c.order??999));
+              const minB=Math.min(...grps[b].map(c=>c.order??999));
+              return minA-minB||a.localeCompare(b);
+            });
             return gNames.map(g=>{
-              const header=`<div class="cat-group-header" style="padding:6px 12px;background:var(--blue-bg);font-size:10px;font-weight:600;color:var(--blue-t);letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);position:sticky;top:0;">📂 ${g}</div>`;
+              const header=`<div class="cat-group-header" onclick="selectAllInGroup(this)" style="padding:6px 12px;background:var(--blue-bg);font-size:10px;font-weight:600;color:var(--blue-t);letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);position:sticky;top:0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+                <span>📂 ${g}</span>
+                <span style="font-size:9px;font-weight:400;opacity:.7;">clique para selecionar todos</span>
+              </div>`;
               const rows=grps[g].map(cat=>{
                 const status=covStatus(cov,cat);
                 const bg=status==='concluido'?'var(--green-bg)':status==='agendado'?'var(--amber-bg)':'var(--surface)';
                 const icon=status==='concluido'?'✅':status==='agendado'?'🟡':'⬜';
                 const label=status==='concluido'?' · Concluído':status==='agendado'?' · Agendado':'';
                 const labelColor=status==='concluido'?'color:var(--green-t)':status==='agendado'?'color:var(--amber-t)':'';
-                return `<div class="cat-item" data-id="${cat.id}" data-name="${esc(cat.name)}" data-cat="${esc(g)}" onclick="selectCatalogItem(this)"
-                  style="display:flex;align-items:center;gap:10px;padding:9px 12px 9px 20px;background:${bg};border-bottom:1px solid var(--border);cursor:pointer;transition:filter .1s;"
-                  onmouseover="this.style.filter='brightness(.95)'" onmouseout="this.style.filter=''">
+                return `<div class="cat-item" data-id="${cat.id}" data-name="${esc(cat.name)}" data-cat="${esc(g)}" onclick="toggleCatalogItem(this)"
+                  style="display:flex;align-items:center;gap:10px;padding:9px 12px 9px 20px;background:${bg};border-bottom:1px solid var(--border);cursor:pointer;">
+                  <div style="width:18px;height:18px;border:2px solid var(--border2);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;" class="cat-check"></div>
                   <span style="font-size:15px;flex-shrink:0;">${icon}</span>
                   <span style="flex:1;font-size:13px;">${cat.name}</span>
                   <span style="font-size:10px;${labelColor}">${label}</span>
@@ -1237,26 +1247,34 @@ function openModal(type,data={}){
             }).join('');
           })()}
         </div>
-        <div id="acSelected" style="display:none;margin-top:8px;padding:9px 12px;background:var(--blue-bg);border-radius:var(--r);font-size:13px;color:var(--blue-t);font-weight:500;"></div>
+        <!-- Contador de selecionados -->
+        <div id="acSelectedCount" style="margin-top:6px;font-size:12px;color:var(--blue-t);font-weight:500;min-height:18px;"></div>
       </div>
 
-      <div style="display:flex;gap:10px;">
-        <div style="flex:1;"><label class="lbl">Departamento</label><select class="inp" id="acDept"><option value="">Selecione...</option>${dOpts(cl,'')}</select></div>
-        <div style="flex:1;"><label class="lbl">Responsável</label><select class="inp" id="acTr"><option value="">Selecione...</option>${tOpts('')}</select></div>
-      </div>
-      <div style="display:flex;gap:10px;">
-        <div style="flex:1;"><label class="lbl">Início</label><input type="time" class="inp" id="acST" value="09:00"></div>
-        <div style="flex:1;"><label class="lbl">Fim</label><input type="time" class="inp" id="acET" value="11:00"></div>
-      </div>
-      <div><label class="lbl">Treinandos (lista geral)</label><input class="inp" id="acTr2" placeholder="Ex: Natasha / Érica / Rafael"></div>
-      <div style="background:var(--blue-bg);border-radius:var(--r);padding:11px;">
-        <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores</div>
-        <div style="display:flex;gap:10px;">
-          ${repField('acRep1','Replicador 1',cl,'')}
-          ${repField('acRep2','Replicador 2 (opcional)',cl,'')}
+      <!-- INFORMAÇÕES COMPARTILHADAS -->
+      <div style="background:var(--surface2);border-radius:var(--r);padding:12px;">
+        <div style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:10px;">Informações aplicadas a todos os processos selecionados</div>
+        <div style="display:flex;gap:10px;margin-bottom:10px;">
+          <div style="flex:1;"><label class="lbl">Departamento</label><select class="inp" id="acDept"><option value="">Selecione...</option>${dOpts(cl,'')}</select></div>
+          <div style="flex:1;"><label class="lbl">Responsável</label><select class="inp" id="acTr"><option value="">Selecione...</option>${tOpts('')}</select></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:10px;">
+          <div style="flex:1;"><label class="lbl">Início</label><input type="time" class="inp" id="acST" value="09:00"></div>
+          <div style="flex:1;"><label class="lbl">Fim</label><input type="time" class="inp" id="acET" value="11:00"></div>
+        </div>
+        <div style="margin-bottom:10px;"><label class="lbl">Envolvidos no treinamento</label><input class="inp" id="acTr2" placeholder="Ex: Natasha, Érica, Rafael"></div>
+        <div style="background:var(--blue-bg);border-radius:var(--r);padding:10px;">
+          <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores</div>
+          <div style="display:flex;gap:10px;">
+            ${repField('acRep1','Replicador 1',cl,'')}
+            ${repField('acRep2','Replicador 2 (opcional)',cl,'')}
+          </div>
         </div>
       </div>
-      <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-proc-catalog">Adicionar</button></div>
+      <div style="display:flex;gap:9px;justify-content:flex-end;">
+        <button class="btn" data-action="close-modal">Cancelar</button>
+        <button class="btn btn-p" data-action="save-proc-catalog">+ Adicionar selecionados</button>
+      </div>
     </div>`;
 
   // ── CATÁLOGO ──
@@ -1394,13 +1412,50 @@ function openModal(type,data={}){
 function closeModal(){document.getElementById('ov').classList.remove('open');document.getElementById('mb').innerHTML='';}
 window.toggleSidebar=function(){const sb=document.getElementById('sidebar');const ov=document.getElementById('mob-overlay');sb.classList.toggle('open');ov.classList.toggle('open');}
 window.closeSidebar=function(){document.getElementById('sidebar').classList.remove('open');document.getElementById('mob-overlay').classList.remove('open');}
-window.selectCatalogItem=function(el){
-  document.querySelectorAll('.cat-item').forEach(i=>i.style.outline='');
-  el.style.outline='2px solid var(--blue)';
-  document.getElementById('acCat').value=el.dataset.id;
-  const sel=document.getElementById('acSelected');
-  sel.style.display='block';
-  sel.textContent='✓ Selecionado: '+el.dataset.name;
+window.toggleCatalogItem=function(el){
+  const chk=el.querySelector('.cat-check');
+  const selected=el.dataset.selected==='1';
+  if(selected){
+    el.dataset.selected='0';
+    chk.style.background='';chk.style.borderColor='var(--border2)';chk.textContent='';
+    el.style.outline='';
+  } else {
+    el.dataset.selected='1';
+    chk.style.background='var(--blue)';chk.style.borderColor='var(--blue)';chk.textContent='✓';chk.style.color='#fff';
+    el.style.outline='2px solid var(--blue)';
+  }
+  const count=document.querySelectorAll('.cat-item[data-selected="1"]').length;
+  const el2=document.getElementById('acSelectedCount');
+  if(el2) el2.textContent=count>0?`✓ ${count} processo(s) selecionado(s)`:'';
+}
+// Mantém compatibilidade com código legado
+window.selectCatalogItem=window.toggleCatalogItem;
+window.selectAllInGroup=function(header){
+  // Pega todos os itens do grupo (até o próximo header)
+  let el=header.nextElementSibling;
+  const items=[];
+  while(el&&!el.classList.contains('cat-group-header')){
+    if(el.classList.contains('cat-item'))items.push(el);
+    el=el.nextElementSibling;
+  }
+  // Verifica se todos já estão selecionados
+  const allSelected=items.every(i=>i.dataset.selected==='1');
+  // Se todos selecionados, desmarca todos; senão, seleciona todos
+  items.forEach(item=>{
+    const chk=item.querySelector('.cat-check');
+    if(allSelected){
+      item.dataset.selected='0';
+      chk.style.background='';chk.style.borderColor='var(--border2)';chk.textContent='';
+      item.style.outline='';
+    } else {
+      item.dataset.selected='1';
+      chk.style.background='var(--blue)';chk.style.borderColor='var(--blue)';chk.textContent='✓';chk.style.color='#fff';
+      item.style.outline='2px solid var(--blue)';
+    }
+  });
+  const count=document.querySelectorAll('.cat-item[data-selected="1"]').length;
+  const el2=document.getElementById('acSelectedCount');
+  if(el2) el2.textContent=count>0?`✓ ${count} processo(s) selecionado(s)`:'';
 }
 window.filterCatalogList=function(q){
   const term=q.toLowerCase();
@@ -1500,7 +1555,7 @@ function exportPDF(cid){
   <!-- CRONOGRAMA -->
   <h2 style="font-size:14px;font-weight:600;margin-bottom:12px;color:#1a1a18;">Cronograma detalhado</h2>
   <table>
-    <thead><tr><th style="width:90px;">Horário</th><th>Processo</th><th style="width:130px;">Departamento</th><th style="width:110px;">Responsável</th><th>Treinandos</th><th style="width:90px;">Status</th><th>Observações</th></tr></thead>
+    <thead><tr><th style="width:90px;">Horário</th><th>Processo</th><th style="width:130px;">Departamento</th><th style="width:110px;">Responsável</th><th>Envolvidos</th><th style="width:90px;">Status</th><th>Observações</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
 
@@ -1793,9 +1848,29 @@ document.addEventListener('click',async e=>{
 
   // SAVE PROC CATALOG
   else if(a==='save-proc-catalog'){
-    const sid=q('acSid'),catId=q('acCat'),cat=D.catalog[catId],deptId=q('acDept'),trainerId=q('acTr'),trainees=q('acTr2'),startTime=document.getElementById('acST')?.value||'09:00',endTime=document.getElementById('acET')?.value||'11:00',rep1=q('acRep1'),rep2=q('acRep2');
-    if(!sid||!catId)return alert('Selecione um processo do catálogo.');
-    const id=gi();await fbSet(`/sessions/${sid}/processes/${id}`,{id,name:cat.name,catalogId:catId,deptId,trainerId,trainees,status:'pendente',obs:cat.obs||'',startTime,endTime,rep1,rep2});closeModal();
+    const sid=q('acSid');
+    // Coleta todos os itens selecionados (multi-select)
+    const selectedItems=[...document.querySelectorAll('.cat-item[data-selected="1"]')];
+    if(!sid||selectedItems.length===0)return alert('Selecione pelo menos um processo.');
+    const deptId=q('acDept'),trainerId=q('acTr'),trainees=q('acTr2');
+    const startTime=document.getElementById('acST')?.value||'09:00';
+    const endTime=document.getElementById('acET')?.value||'11:00';
+    const rep1=q('acRep1'),rep2=q('acRep2');
+    // Salva todos em paralelo
+    const saves=selectedItems.map(el=>{
+      const catId=el.dataset.id;
+      const cat=D.catalog[catId];
+      if(!cat)return Promise.resolve();
+      const id=gi();
+      return fbSet(`/sessions/${sid}/processes/${id}`,{
+        id,name:cat.name,catalogId:catId,deptId,trainerId,trainees,
+        status:'pendente',obs:cat.obs||'',startTime,endTime,rep1,rep2
+      });
+    });
+    await Promise.all(saves);
+    closeModal();
+    // Feedback
+    if(selectedItems.length>1) alert(`✅ ${selectedItems.length} processos adicionados ao dia!`);
   }
 
   // SAVE CATALOG
