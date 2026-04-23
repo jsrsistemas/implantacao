@@ -714,6 +714,7 @@ function renderCronograma(){
           <div style="flex:1;min-width:0;">
             <div style="font-weight:500;font-size:14px;">${s.label}${s.notes?` — <span style="font-weight:400;color:var(--text2);font-size:12px;">${s.notes}</span>`:''}</div>
             <div style="font-size:11px;color:var(--text2);margin-top:2px;">${c?.name||''} · ${tot} processo(s) · ${done}/${tot} concluídos · <span style="color:${pcol(pct)};font-weight:500;">${pct}%</span></div>
+            ${s.internalNotes&&isE?`<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;background:#FFF8E6;border:1px solid #F0C040;border-radius:var(--r);padding:3px 9px;font-size:11px;color:#7A5000;"><span>🔒</span><span>${s.internalNotes}</span></div>`:''}
           </div>
           <span style="color:var(--text2);font-size:14px;flex-shrink:0;">${isExp?'▲':'▼'}</span>
         </div>
@@ -1146,7 +1147,12 @@ function openModal(type,data={}){
     <div style="display:flex;flex-direction:column;gap:12px;">
       <div><label class="lbl">Cliente</label><select class="inp" id="edCid"><option value="">Selecione...</option>${fOpts(cs,s?.clientId)}</select></div>
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Rótulo</label><input class="inp" id="edLabel" value="${esc(s?.label||'')}"></div><div style="flex:1;"><label class="lbl">Data</label><input type="date" class="inp" id="edDate" value="${s?.date||''}"></div></div>
-      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Modalidade</label><select class="inp" id="edMod"><option value="presencial"${s?.modality==='presencial'?' selected':''}>Presencial</option><option value="remoto"${s?.modality==='remoto'?' selected':''}>Remoto</option></select></div><div style="flex:1;"><label class="lbl">Observação</label><input class="inp" id="edNotes" value="${esc(s?.notes||'')}"></div></div>
+      <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Modalidade</label><select class="inp" id="edMod"><option value="presencial"${s?.modality==='presencial'?' selected':''}>Presencial</option><option value="remoto"${s?.modality==='remoto'?' selected':''}>Remoto</option></select></div><div style="flex:1;"><label class="lbl">Observação pública</label><input class="inp" id="edNotes" value="${esc(s?.notes||'')}" placeholder="Aparece no cronograma e PDF"></div></div>
+      <div style="background:#FFF8E6;border:1px solid #F0C040;border-radius:var(--r);padding:11px;">
+        <label class="lbl" style="color:#7A5000;">🔒 Observação interna (só equipe JSR)</label>
+        <textarea class="inp" id="edInternalNotes" rows="2" style="resize:vertical;background:#FFFDF0;" placeholder="Anotações internas — não aparece no PDF nem no link de confirmação...">${esc(s?.internalNotes||'')}</textarea>
+        <div style="font-size:10px;color:#9B7A00;margin-top:4px;">⚠️ Visível apenas para a equipe JSR. Não é exibida no PDF nem no link enviado ao replicador.</div>
+      </div>
       <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-day">Salvar</button></div>
     </div>`;
 
@@ -1172,6 +1178,10 @@ function openModal(type,data={}){
     </div>`;
   } else if(type==='edit-proc'){
     const s=D.sessions[data.sid];const cl=gc(s?.clientId);const proc=s?.processes?.[data.pid];
+    // Outros dias do mesmo cliente para opção de mover
+    const otherDays=Object.values(D.sessions||{})
+      .filter(ss=>ss.clientId===s?.clientId && ss.id!==data.sid)
+      .sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
     title='Editar processo';
     body=`<input type="hidden" id="epSid" value="${data.sid}"><input type="hidden" id="epPid" value="${data.pid}">
     <div style="display:flex;flex-direction:column;gap:12px;">
@@ -1187,6 +1197,14 @@ function openModal(type,data={}){
         </div>
       </div>
       <div><label class="lbl">Observação</label><textarea class="inp" id="epObs" rows="2" style="resize:vertical;">${esc(proc?.obs||'')}</textarea></div>
+      ${otherDays.length>0?`<div style="background:#F0F7FF;border:1px solid #B8D4F0;border-radius:var(--r);padding:11px;">
+        <label class="lbl" style="color:var(--blue-t);">📅 Mover para outro dia (opcional)</label>
+        <select class="inp" id="epMoveTo" style="margin-top:2px;">
+          <option value="">— Manter no dia atual —</option>
+          ${otherDays.map(d=>`<option value="${d.id}">${d.label} · ${fdws(d.date)}</option>`).join('')}
+        </select>
+        <div style="font-size:10px;color:var(--blue-t);margin-top:4px;">Se selecionar outro dia, o processo será movido automaticamente.</div>
+      </div>`:''}
       <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-proc">Salvar alterações</button></div>
     </div>`;
 
@@ -1866,9 +1884,9 @@ document.addEventListener('click',async e=>{
     const id=gi();await fbSet(`/sessions/${id}`,{id,clientId:cid,date,modality,label,notes,processes:{}});closeModal();
   }
   else if(a==='save-edit-day'){
-    const sid=q('edSid'),cid=q('edCid'),label=q('edLabel'),date=q('edDate'),modality=q('edMod')||'presencial',notes=q('edNotes');
+    const sid=q('edSid'),cid=q('edCid'),label=q('edLabel'),date=q('edDate'),modality=q('edMod')||'presencial',notes=q('edNotes'),internalNotes=document.getElementById('edInternalNotes')?.value.trim()||'';
     if(!label||!date)return alert('Preencha rótulo e data.');
-    await fbUpdate(`/sessions/${sid}`,{clientId:cid,label,date,modality,notes});closeModal();
+    await fbUpdate(`/sessions/${sid}`,{clientId:cid,label,date,modality,notes,internalNotes});closeModal();
   }
 
   // SAVE PROC
@@ -1879,8 +1897,21 @@ document.addEventListener('click',async e=>{
   }
   else if(a==='save-edit-proc'){
     const sid=q('epSid'),pid=q('epPid'),name=q('epName'),deptId=q('epDept'),trainerId=q('epTr'),trainees=q('epTr2'),startTime=document.getElementById('epST')?.value||'09:00',endTime=document.getElementById('epET')?.value||'11:00',obs=q('epObs'),rep1=q('epRep1'),rep2=q('epRep2');
+    const moveTo=q('epMoveTo');
     if(!name)return alert('Informe o nome do processo.');
-    await fbUpdate(`/sessions/${sid}/processes/${pid}`,{name,deptId,trainerId,trainees,startTime,endTime,obs,rep1,rep2});closeModal();
+    const procData={name,deptId,trainerId,trainees,startTime,endTime,obs,rep1,rep2};
+    if(moveTo&&moveTo!==sid){
+      // Move para outro dia: copia para novo dia e remove do atual
+      const origProc=D.sessions[sid]?.processes?.[pid]||{};
+      const newPid=gi();
+      await fbSet(`/sessions/${moveTo}/processes/${newPid}`,{...origProc,...procData,id:newPid});
+      await fbRemove(`/sessions/${sid}/processes/${pid}`);
+      closeModal();
+      alert('✅ Processo movido com sucesso!');
+    } else {
+      await fbUpdate(`/sessions/${sid}/processes/${pid}`,procData);
+      closeModal();
+    }
   }
 
   // SAVE PROC CATALOG
