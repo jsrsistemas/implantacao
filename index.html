@@ -1251,19 +1251,81 @@ function openModal(type,data={}){
     </div>`;
   } else if(type==='edit-proc'){
     const s=D.sessions[data.sid];const cl=gc(s?.clientId);const proc=s?.processes?.[data.pid];
+    const cov=cl?coverageForClient(cl.id):{};
+    // Catálogo ordenado por categoria → order → nome
+    const cats=Object.values(D.catalog||{}).sort((a,b)=>{
+      const ca=a.category||'Geral'; const cb=b.category||'Geral';
+      return ca.localeCompare(cb)||(a.order??999)-(b.order??999)||a.name.localeCompare(b.name);
+    });
     // Outros dias do mesmo cliente para opção de mover
     const otherDays=Object.values(D.sessions||{})
       .filter(ss=>ss.clientId===s?.clientId && ss.id!==data.sid)
       .sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
+    // Monta lista por categoria
+    const grps={};
+    cats.forEach(cat=>{const g=cat.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(cat);});
+    const gNames=Object.keys(grps).sort((a,b)=>{
+      const minA=Math.min(...grps[a].map(c=>c.order??999));
+      const minB=Math.min(...grps[b].map(c=>c.order??999));
+      return minA-minB||a.localeCompare(b);
+    });
+    const currentCatId=proc?.catalogId||'';
     title='Editar processo';
     body=`<input type="hidden" id="epSid" value="${data.sid}"><input type="hidden" id="epPid" value="${data.pid}">
+    <input type="hidden" id="epCatId" value="${currentCatId}">
     <div style="display:flex;flex-direction:column;gap:12px;">
-      <div><label class="lbl">Nome do processo</label><input class="inp" id="epName" value="${esc(proc?.name||'')}"></div>
+
+      <!-- SELEÇÃO DO PROCESSO (lista visual por categoria) -->
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
+          <label class="lbl" style="margin:0;">Processo</label>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            <span style="font-size:10px;padding:2px 7px;background:var(--surface2);border-radius:20px;">⬜ Não iniciado</span>
+            <span style="font-size:10px;padding:2px 7px;background:var(--amber-bg);border-radius:20px;">🟡 Agendado</span>
+            <span style="font-size:10px;padding:2px 7px;background:var(--green-bg);border-radius:20px;">✅ Concluído</span>
+          </div>
+        </div>
+        <input class="inp" id="epCatSearch" placeholder="🔍 Buscar processo..." style="margin-bottom:6px;" oninput="filterEpCatalog(this.value)">
+        <div id="epCatList" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r);">
+          ${gNames.map(g=>{
+            const header='<div class="ep-cat-group" style="padding:5px 12px;background:var(--blue-bg);font-size:10px;font-weight:600;color:var(--blue-t);letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);position:sticky;top:0;">📂 '+g+'</div>';
+            const rows=grps[g].map(cat=>{
+              const status=covStatus(cov,cat);
+              const bg=status==='concluido'?'var(--green-bg)':status==='agendado'?'var(--amber-bg)':'var(--surface)';
+              const icon=status==='concluido'?'✅':status==='agendado'?'🟡':'⬜';
+              const label=status==='concluido'?' · Concluído':status==='agendado'?' · Agendado':'';
+              const labelColor=status==='concluido'?'color:var(--green-t)':status==='agendado'?'color:var(--amber-t)':'';
+              const isSelected=cat.id===currentCatId;
+              return '<div class="ep-cat-item" data-id="'+cat.id+'" data-name="'+esc(cat.name)+'" onclick="selectEpCatalog(this)"'
+                +' style="display:flex;align-items:center;gap:10px;padding:8px 12px 8px 20px;background:'+(isSelected?'#dbeafe':bg)+';border-bottom:1px solid var(--border);cursor:pointer;outline:'+(isSelected?'2px solid var(--blue)':'none')+';">'
+                +'<span style="font-size:14px;flex-shrink:0;">'+icon+'</span>'
+                +'<span style="flex:1;font-size:13px;">'+(isSelected?'<strong>':'')+cat.name+(isSelected?'</strong>':'')+'</span>'
+                +'<span style="font-size:10px;'+labelColor+'">'+label+'</span>'
+                +'</div>';
+            }).join('');
+            return header+rows;
+          }).join('')}
+          <!-- Opção manual: sem catálogo -->
+          <div class="ep-cat-item" data-id="" data-name="${esc(proc?.name||'')}" onclick="selectEpCatalog(this)"
+            style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:${!currentCatId?'#dbeafe':'var(--surface)'};border-top:2px solid var(--border);cursor:pointer;outline:${!currentCatId?'2px solid var(--blue)':'none'};">
+            <span style="font-size:14px;">✏️</span>
+            <span style="flex:1;font-size:13px;color:var(--text2);font-style:italic;">Processo manual (sem catálogo)</span>
+          </div>
+        </div>
+        <div id="epNameWrap" style="margin-top:6px;${!currentCatId?'':'display:none;'}">
+          <label class="lbl">Nome do processo (manual)</label>
+          <input class="inp" id="epName" value="${esc(proc?.name||'')}" placeholder="Nome personalizado...">
+        </div>
+        <div id="epSelectedInfo" style="margin-top:6px;padding:6px 10px;background:var(--blue-bg);border-radius:var(--r);font-size:12px;color:var(--blue-t);font-weight:500;${currentCatId?'':'display:none;'}">
+          ✓ Selecionado: ${currentCatId&&D.catalog[currentCatId]?D.catalog[currentCatId].name:proc?.name||''}
+        </div>
+      </div>
+
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Departamento</label><select class="inp" id="epDept"><option value="">Selecione...</option>${dOpts(cl,proc?.deptId)}</select></div><div style="flex:1;"><label class="lbl">Responsável (consultor)</label><select class="inp" id="epTr"><option value="">Selecione...</option>${tOpts(proc?.trainerId)}</select></div></div>
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Início</label><input type="time" class="inp" id="epST" value="${proc?.startTime||'09:00'}"></div><div style="flex:1;"><label class="lbl">Fim</label><input type="time" class="inp" id="epET" value="${proc?.endTime||'11:00'}"></div></div>
       <div><label class="lbl">Envolvidos no treinamento</label><input class="inp" id="epTr2" value="${esc(proc?.trainees||'')}"></div>
       <div style="background:var(--blue-bg);border-radius:var(--r);padding:11px;">
-        <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores — responsáveis por aprender e repassar o conteúdo</div>
+        <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores</div>
         <div style="display:flex;gap:10px;">
           ${repField('epRep1','Replicador 1',cl,proc?.rep1||'')}
           ${repField('epRep2','Replicador 2 (opcional)',cl,proc?.rep2||'')}
@@ -1272,10 +1334,11 @@ function openModal(type,data={}){
       <div><label class="lbl">Observação</label><textarea class="inp" id="epObs" rows="2" style="resize:vertical;">${esc(proc?.obs||'')}</textarea></div>
       ${otherDays.length>0?`<div style="background:#F0F7FF;border:1px solid #B8D4F0;border-radius:var(--r);padding:11px;">
         <label class="lbl" style="color:var(--blue-t);">📅 Mover para outro dia (opcional)</label>
-        <select class="inp" id="epMoveTo" style="margin-top:2px;">
+        <select class="inp" id="epMoveTo" style="margin-top:2px;" onchange="showDayProcesses(this.value)">
           <option value="">— Manter no dia atual —</option>
-          ${otherDays.map(d=>`<option value="${d.id}">${d.label} · ${fdws(d.date)}</option>`).join('')}
+          ${otherDays.map(d=>{const np=Object.keys(d.processes||{}).length;return '<option value="'+d.id+'">'+d.label+' · '+fdws(d.date)+' · '+np+' processo(s)</option>';}).join('')}
         </select>
+        <div id="epDayPreview" style="margin-top:8px;display:none;"></div>
         <div style="font-size:10px;color:var(--blue-t);margin-top:4px;">Se selecionar outro dia, o processo será movido automaticamente.</div>
       </div>`:''}
       <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-proc">Salvar alterações</button></div>
@@ -1540,6 +1603,58 @@ function openModal(type,data={}){
 function closeModal(){document.getElementById('ov').classList.remove('open');document.getElementById('mb').innerHTML='';}
 window.toggleSidebar=function(){const sb=document.getElementById('sidebar');const ov=document.getElementById('mob-overlay');sb.classList.toggle('open');ov.classList.toggle('open');}
 window.closeSidebar=function(){document.getElementById('sidebar').classList.remove('open');document.getElementById('mob-overlay').classList.remove('open');}
+window.selectEpCatalog=function(el){
+  document.querySelectorAll('.ep-cat-item').forEach(i=>{i.style.outline='';i.style.background=i.style.background;});
+  el.style.outline='2px solid var(--blue)';
+  el.style.background='#dbeafe';
+  const catId=el.dataset.id;
+  const catName=el.dataset.name;
+  document.getElementById('epCatId').value=catId;
+  // Mostra/esconde campo manual
+  const nameWrap=document.getElementById('epNameWrap');
+  const selInfo=document.getElementById('epSelectedInfo');
+  if(!catId){
+    nameWrap.style.display=''; selInfo.style.display='none';
+  } else {
+    nameWrap.style.display='none';
+    selInfo.style.display='block';
+    selInfo.textContent='✓ Selecionado: '+catName;
+    document.getElementById('epName').value=catName;
+  }
+}
+window.filterEpCatalog=function(q){
+  const term=q.toLowerCase();
+  document.querySelectorAll('.ep-cat-item').forEach(el=>{
+    el.style.display=el.dataset.name.toLowerCase().includes(term)?'flex':'none';
+  });
+  document.querySelectorAll('.ep-cat-group').forEach(h=>{
+    let next=h.nextElementSibling;let vis=false;
+    while(next&&!next.classList.contains('ep-cat-group')){if(next.style.display!=='none')vis=true;next=next.nextElementSibling;}
+    h.style.display=vis?'':'none';
+  });
+}
+window.showDayProcesses=function(sid){
+  const preview=document.getElementById('epDayPreview');
+  if(!preview)return;
+  if(!sid){preview.style.display='none';return;}
+  const s=D.sessions[sid];
+  if(!s){preview.style.display='none';return;}
+  const procs=Object.values(s.processes||{}).sort((a,b)=>(a.order??999)-(b.order??999));
+  if(!procs.length){
+    preview.innerHTML='<div style="font-size:11px;color:var(--text2);padding:6px 0;">Este dia ainda não tem processos.</div>';
+  } else {
+    preview.innerHTML='<div style="font-size:10px;font-weight:500;color:var(--blue-t);margin-bottom:5px;">Processos neste dia ('+procs.length+'):</div>'
+      +procs.map((p,i)=>{
+        const icon=p.status==='realizado'||p.status==='video'?'✅':p.status==='cancelado'?'❌':'⏳';
+        return '<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:'+(i%2===0?'#fff':'#f0f7ff')+';border-radius:4px;font-size:11px;">'
+          +'<span>'+icon+'</span>'
+          +'<span style="flex:1;">'+p.name+'</span>'
+          +'<span style="color:#6b6a65;font-size:10px;">'+(p.startTime||'')+(p.endTime?'–'+p.endTime:'')+'</span>'
+          +'</div>';
+      }).join('');
+  }
+  preview.style.display='block';
+}
 window.toggleCatalogItem=function(el){
   const chk=el.querySelector('.cat-check');
   const selected=el.dataset.selected==='1';
@@ -2017,12 +2132,14 @@ document.addEventListener('click',async e=>{
     const id=gi();await fbSet(`/sessions/${sid}/processes/${id}`,{id,name,deptId,trainerId,trainees,status:'pendente',obs,startTime,endTime,rep1,rep2});closeModal();
   }
   else if(a==='save-edit-proc'){
-    const sid=q('epSid'),pid=q('epPid'),name=q('epName'),deptId=q('epDept'),trainerId=q('epTr'),trainees=q('epTr2'),startTime=document.getElementById('epST')?.value||'09:00',endTime=document.getElementById('epET')?.value||'11:00',obs=q('epObs'),rep1=q('epRep1'),rep2=q('epRep2');
+    const sid=q('epSid'),pid=q('epPid'),deptId=q('epDept'),trainerId=q('epTr'),trainees=q('epTr2'),startTime=document.getElementById('epST')?.value||'09:00',endTime=document.getElementById('epET')?.value||'11:00',obs=q('epObs'),rep1=q('epRep1'),rep2=q('epRep2');
     const moveTo=q('epMoveTo');
-    if(!name)return alert('Informe o nome do processo.');
-    const procData={name,deptId,trainerId,trainees,startTime,endTime,obs,rep1,rep2};
+    // Nome: se vem do catálogo usa o nome do catálogo, senão usa o campo manual
+    const catId=document.getElementById('epCatId')?.value||'';
+    const name=catId&&D.catalog[catId]?D.catalog[catId].name:q('epName');
+    if(!name)return alert('Selecione um processo do catálogo ou informe um nome manual.');
+    const procData={name,deptId,trainerId,trainees,startTime,endTime,obs,rep1,rep2,catalogId:catId||null};
     if(moveTo&&moveTo!==sid){
-      // Move para outro dia: copia para novo dia e remove do atual
       const origProc=D.sessions[sid]?.processes?.[pid]||{};
       const newPid=gi();
       await fbSet(`/sessions/${moveTo}/processes/${newPid}`,{...origProc,...procData,id:newPid});
