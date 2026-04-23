@@ -344,6 +344,57 @@ const CATALOG_DEFAULT = [
 const gi = () => Math.random().toString(36).slice(2,8);
 const AVC = ['#3B82F6','#10B981','#F59E0B','#8B5CF6','#EC4899','#06B6D4','#EF4444','#14B8A6'];
 const avc = n => AVC[(n||'A').charCodeAt(0)%AVC.length];
+
+// ── FERIADOS NACIONAIS (fixos + móveis por ano) ───────────────────────────
+function getHolidays(year){
+  // Páscoa (algoritmo de Meeus/Jones/Butcher)
+  const a=year%19,b=Math.floor(year/100),c=year%100;
+  const d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25);
+  const g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30;
+  const i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7;
+  const m=Math.floor((a+11*h+22*l)/451);
+  const month=Math.floor((h+l-7*m+114)/31);
+  const day=((h+l-7*m+114)%31)+1;
+  const easter=new Date(year,month-1,day);
+  const fmt=d=>d.toISOString().split('T')[0];
+  const add=( d,n)=>{const r=new Date(d);r.setDate(r.getDate()+n);return fmt(r);};
+  return new Set([
+    `${year}-01-01`, // Confraternização universal
+    `${year}-04-21`, // Tiradentes
+    `${year}-05-01`, // Dia do trabalho
+    `${year}-09-07`, // Independência
+    `${year}-10-12`, // Nossa Senhora Aparecida
+    `${year}-11-02`, // Finados
+    `${year}-11-15`, // Proclamação da República
+    `${year}-11-20`, // Consciência Negra
+    `${year}-12-25`, // Natal
+    add(easter,-48), // Carnaval seg
+    add(easter,-47), // Carnaval ter
+    add(easter,-2),  // Sexta-feira Santa
+    fmt(easter),     // Páscoa
+    add(easter,60),  // Corpus Christi
+  ]);
+}
+
+function isWeekend(dateStr){ const d=new Date(dateStr+'T00:00'); return d.getDay()===0||d.getDay()===6; }
+function isHoliday(dateStr){ return getHolidays(parseInt(dateStr.slice(0,4))).has(dateStr); }
+function isWorkday(dateStr){ return !isWeekend(dateStr)&&!isHoliday(dateStr); }
+
+// Avança N dias úteis (pulando fins de semana e feriados)
+function addWorkdays(dateStr, n){
+  let d=new Date(dateStr+'T00:00');
+  let count=0;
+  const sign=n>=0?1:-1;
+  while(count<Math.abs(n)){
+    d.setDate(d.getDate()+sign);
+    const s=d.toISOString().split('T')[0];
+    if(isWorkday(s)) count++;
+  }
+  return d.toISOString().split('T')[0];
+}
+
+// Diferença em dias corridos entre duas datas
+function daysDiff(a,b){ return Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/86400000); }
 const avi = n => (n||'?').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
 const av = (n,sz=30) => `<div class="av" style="width:${sz}px;height:${sz}px;background:${avc(n)};color:#fff;font-size:${Math.round(sz*.36)}px;">${avi(n)}</div>`;
 const fd = d => { try{return new Date(d+'T00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});}catch(e){return d||'';} };
@@ -693,16 +744,25 @@ function renderCronograma(){
       ${Object.entries(PSTAT).map(([k,v])=>`<option value="${k}"${S.fS===k?' selected':''}>${v.l}</option>`).join('')}
     </select>
   </div>
-  ${filtered.length===0?`<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum dia encontrado.${isE?` <br><button class="btn btn-p" style="margin-top:12px;" data-action="open-modal" data-modal="add-day">+ Criar primeiro dia</button>`:''}</div>`:''}
-  ${filtered.map((s,si)=>{
-    const c=gc(s.clientId);
-    const procs=Object.values(s.processes||{}).sort((a,b)=>(a.order??999)-(b.order??999));
-    const done=procs.filter(p=>p.status==='realizado'||p.status==='video').length;
-    const tot=procs.length;
-    const pct=tot>0?Math.round(done/tot*100):0;
-    const isExp=S.exp===s.id;
-    const isFirst=si===0; const isLast=si===filtered.length-1;
-    return `<div class="day-card">
+  ${filtered.length===0?('<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum dia encontrado.'+(isE?'<br><button class="btn btn-p" style="margin-top:12px;" data-action="open-modal" data-modal="add-day">+ Criar primeiro dia</button>':'')+'</div>'):''}
+  ${(()=>{
+    // Calcula semanas relativas ao primeiro dia da implantação
+    const firstDate=filtered.length>0?filtered[0].date:null;
+    let lastWeek=-1;
+    return filtered.map((s,si)=>{
+      const c=gc(s.clientId);
+      const procs=Object.values(s.processes||{}).sort((a,b)=>(a.order??999)-(b.order??999));
+      const done=procs.filter(p=>p.status==='realizado'||p.status==='video').length;
+      const tot=procs.length;
+      const pct=tot>0?Math.round(done/tot*100):0;
+      const isExp=S.exp===s.id;
+      const isFirst=si===0; const isLast=si===filtered.length-1;
+      // Calcula número da semana relativa ao primeiro dia
+      const diffDays=firstDate?daysDiff(firstDate,s.date):0;
+      const weekNum=Math.floor(diffDays/7)+1;
+      const weekDivider=weekNum!==lastWeek?('<div style="display:flex;align-items:center;gap:10px;margin:'+(si===0?'0':'16px')+' 0 10px;"><div style="background:var(--blue);color:#fff;font-size:11px;font-weight:600;padding:3px 14px;border-radius:20px;">Semana '+weekNum+'</div><div style="flex:1;height:1px;background:var(--border);"></div></div>'):'';
+      lastWeek=weekNum;
+    const dayCard = `<div class="day-card">
       <!-- Cabeçalho separado em duas linhas independentes -->
       <div style="padding:12px 16px;border-bottom:0.5px solid var(--border);">
         <!-- Linha 1: Info do dia + clique para expandir -->
@@ -787,7 +847,9 @@ function renderCronograma(){
         </div>
       </div>`:''}
     </div>`;
-  }).join('')}`;
+      return weekDivider + dayCard;
+    }).join('');
+  })()}`;
 }
 
 // ── GRADE DE HORÁRIOS ─────────────────────────────────────────────────────
@@ -980,6 +1042,7 @@ function renderClientes(){
       </div></div>
       <div style="display:flex;gap:5px;align-items:center;">
         <button class="btn btn-i btn-sm" data-action="open-modal" data-modal="edit-client" data-id="${c.id}" title="Editar cliente">✎</button>
+        <button class="btn btn-d btn-sm" data-action="rm-client" data-id="${c.id}" data-name="${esc(c.name)}" title="Excluir cliente">🗑 Excluir</button>
         <button style="color:var(--text2);font-size:16px;background:transparent;border:none;padding:4px 8px;" data-action="exp" data-id="${c.id}">${S.exp===c.id?'▲':'▼'}</button>
       </div>
     </div>
@@ -1821,9 +1884,25 @@ document.addEventListener('click',async e=>{
   else if(a==='close-modal'){closeModal();}
   else if(a==='mark'){await fbUpdate(`/sessions/${t.dataset.sid}/processes/${t.dataset.pid}`,{status:t.dataset.st});}
   else if(a==='rm-proc'){if(confirm('Remover este processo?'))await fbRemove(`/sessions/${t.dataset.sid}/processes/${t.dataset.pid}`);}
-  else if(a==='rm-day'){if(confirm('Remover este dia e todos os processos?'))await fbRemove(`/sessions/${t.dataset.id}`);}
-  else if(a==='rm-dept'){if(confirm('Remover departamento?'))await fbRemove(`/clients/${t.dataset.cid}/depts/${t.dataset.did}`);}
-  else if(a==='edit-day-click'){
+  else if(a==='rm-day'){
+    const sid=t.dataset.id; const s=D.sessions[sid];
+    const nProcs=Object.keys(s?.processes||{}).length;
+    if(confirm(`Remover "${s?.label||'este dia'}"?\n\nSerão excluídos ${nProcs} processo(s) junto com o dia.\n\nEssa ação não pode ser desfeita.`))
+      await fbRemove(`/sessions/${sid}`);
+  }  else if(a==='rm-dept'){if(confirm('Remover departamento?'))await fbRemove(`/clients/${t.dataset.cid}/depts/${t.dataset.did}`);}
+  else if(a==='rm-client'){
+    const cid=t.dataset.id; const cname=t.dataset.name||'este cliente';
+    const sessions=Object.values(D.sessions||{}).filter(s=>s.clientId===cid);
+    const nDias=sessions.length;
+    const nProcs=sessions.reduce((a,s)=>a+Object.keys(s.processes||{}).length,0);
+    if(!confirm(`⚠️ EXCLUIR CLIENTE: "${cname}"\n\nIsso vai remover permanentemente:\n• O cadastro do cliente\n• ${nDias} dia(s) de treinamento\n• ${nProcs} processo(s)\n• Todos os departamentos e replicadores\n\nEssa ação NÃO pode ser desfeita!\n\nDeseja continuar?`))return;
+    showSync('syncing','Excluindo...');
+    // Remove todas as sessões do cliente
+    const removes=[fbRemove(`/clients/${cid}`)];
+    sessions.forEach(s=>removes.push(fbRemove(`/sessions/${s.id}`)));
+    await Promise.all(removes);
+    showSync('synced','Cliente excluído ✓');
+  }  else if(a==='edit-day-click'){
     openModal('edit-day', {sid: t.dataset.sid});
   }
   else if(a==='replicate-click'){
@@ -1886,7 +1965,39 @@ document.addEventListener('click',async e=>{
   else if(a==='save-edit-day'){
     const sid=q('edSid'),cid=q('edCid'),label=q('edLabel'),date=q('edDate'),modality=q('edMod')||'presencial',notes=q('edNotes'),internalNotes=document.getElementById('edInternalNotes')?.value.trim()||'';
     if(!label||!date)return alert('Preencha rótulo e data.');
-    await fbUpdate(`/sessions/${sid}`,{clientId:cid,label,date,modality,notes,internalNotes});closeModal();
+    const origDate=D.sessions[sid]?.date;
+    await fbUpdate(`/sessions/${sid}`,{clientId:cid,label,date,modality,notes,internalNotes});
+    // Se a data mudou, oferece mover os dias seguintes
+    if(origDate&&origDate!==date){
+      const diffDays=daysDiff(origDate,date);
+      // Pega dias seguintes do mesmo cliente ordenados
+      const nextSessions=Object.values(D.sessions||{})
+        .filter(s=>s.id!==sid&&s.clientId===cid&&s.date>origDate)
+        .sort((a,b)=>a.date.localeCompare(b.date));
+      if(nextSessions.length>0){
+        const move=confirm(`A data foi alterada em ${Math.abs(diffDays)} dia(s).\n\nDeseja mover os ${nextSessions.length} dias seguintes proporcionalmente?\n\nFeriados e fins de semana serão pulados automaticamente.`);
+        if(move){
+          const updates={};
+          nextSessions.forEach(s=>{
+            let newDate=s.date;
+            // Aplica a mesma diferença em dias corridos
+            const baseDate=new Date(s.date+'T00:00');
+            baseDate.setDate(baseDate.getDate()+diffDays);
+            newDate=baseDate.toISOString().split('T')[0];
+            // Pula para próximo dia útil se cair em feriado/fim de semana
+            while(!isWorkday(newDate)){
+              const nd=new Date(newDate+'T00:00');
+              nd.setDate(nd.getDate()+(diffDays>=0?1:-1));
+              newDate=nd.toISOString().split('T')[0];
+            }
+            updates[`/sessions/${s.id}/date`]=newDate;
+          });
+          await fbUpdate('/',updates);
+          alert(`✅ ${nextSessions.length} dia(s) atualizados, pulando feriados e fins de semana!`);
+        }
+      }
+    }
+    closeModal();
   }
 
   // SAVE PROC
@@ -1950,7 +2061,25 @@ document.addEventListener('click',async e=>{
   else if(a==='save-edit-catalog'){
     const id=q('ecId'),name=q('ecName'),duration=qi('ecDur')||2,obs=q('ecObs'),category=q('ecCat')||'Geral';
     if(!name)return alert('Informe o nome.');
-    await fbUpdate(`/catalog/${id}`,{name,duration,obs,category});closeModal();
+    const oldName=D.catalog[id]?.name||'';
+    await fbUpdate(`/catalog/${id}`,{name,duration,obs,category});
+    // Se o nome mudou, atualiza todos os processos vinculados nas sessões
+    if(name!==oldName){
+      const updates={};
+      Object.values(D.sessions||{}).forEach(s=>{
+        Object.values(s.processes||{}).forEach(p=>{
+          if(p.catalogId===id){
+            updates[`/sessions/${s.id}/processes/${p.id}/name`]=name;
+          }
+        });
+      });
+      const nLinked=Object.keys(updates).length;
+      if(nLinked>0){
+        await fbUpdate('/',updates);
+        alert(`✅ Nome atualizado no catálogo e em ${nLinked} processo(s) vinculado(s) no cronograma.`);
+      }
+    }
+    closeModal();
   }
 
   // SAVE CLIENT
