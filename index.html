@@ -1957,12 +1957,21 @@ function exportPDF(cid){
     ${procs.map((p,i)=>{
       const tr=gu(p.trainerId);const dept=c.depts?.[p.deptId];
       const bg=i%2===0?'#ffffff':'#f9f8f5';
+      // Replicadores com status de confirmação
+      const repConfs=D.repconfirmations?.[s.id]||{};
+      const rep1conf=p.rep1?Object.values(repConfs).find(rc=>rc.repName===p.rep1&&rc.processIds?.includes(p.id)):null;
+      const rep2conf=p.rep2?Object.values(repConfs).find(rc=>rc.repName===p.rep2&&rc.processIds?.includes(p.id)):null;
+      const repsHtml=[
+        p.rep1?`<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;background:${rep1conf?'#eaf3de':'#faeeda'};color:${rep1conf?'#27500a':'#633806'};margin-bottom:2px;">${rep1conf?'✅':'⏳'} ${p.rep1}</span>`:null,
+        p.rep2?`<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;background:${rep2conf?'#eaf3de':'#faeeda'};color:${rep2conf?'#27500a':'#633806'};margin-bottom:2px;">${rep2conf?'✅':'⏳'} ${p.rep2}</span>`:null,
+      ].filter(Boolean).join('<br>');
       return `<tr style="background:${bg};">
         <td style="padding:7px 12px;font-size:11px;color:#6b6a65;white-space:nowrap;">${p.startTime||'—'}–${p.endTime||'?'}</td>
         <td style="padding:7px 12px;font-size:12px;font-weight:500;">${p.name}</td>
         <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${dept?.name||'—'}</td>
         <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${tr?.name||'—'}</td>
         <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${p.trainees||'—'}</td>
+        <td style="padding:7px 12px;font-size:11px;">${repsHtml||'—'}</td>
         <td style="padding:7px 12px;font-size:11px;"><span style="background:${ST_BG[p.status]||'#e6f1fb'};color:${ST_COLOR[p.status]||'#0c447c'};padding:2px 8px;border-radius:12px;font-weight:500;">${PSTAT[p.status]?.l||p.status}</span></td>
         <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${p.obs||''}</td>
       </tr>`;
@@ -2013,7 +2022,7 @@ function exportPDF(cid){
   <!-- CRONOGRAMA -->
   <h2 style="font-size:14px;font-weight:600;margin-bottom:12px;color:#1a1a18;">Cronograma detalhado</h2>
   <table>
-    <thead><tr><th style="width:90px;">Horário</th><th>Processo</th><th style="width:130px;">Departamento</th><th style="width:110px;">Responsável</th><th>Envolvidos</th><th style="width:90px;">Status</th><th>Observações</th></tr></thead>
+    <thead><tr><th style="width:90px;">Horário</th><th>Processo</th><th style="width:120px;">Departamento</th><th style="width:100px;">Responsável</th><th>Envolvidos</th><th style="width:130px;">Replicadores</th><th style="width:80px;">Status</th><th>Observações</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
 
