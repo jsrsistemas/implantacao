@@ -556,7 +556,7 @@ function renderSidebar(){
     {id:'horarios',ic:'◷',l:'Grade de horários'},
   ];
   if(p.role==='admin'||p.role==='instrutor')nav.push({id:'catalogo',ic:'☷',l:'Catálogo'});
-  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'admin',ic:'⚙',l:'Usuários'});}
+  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
   // Atualiza título na barra mobile
   const cur=nav.find(n=>n.id===S.view);
   const mobTitle=document.getElementById('mob-view-title');
@@ -1159,7 +1159,222 @@ function renderClientes(){
   }).join('')}`;
 }
 
-// ── ADMIN ─────────────────────────────────────────────────────────────────
+// ── RELATÓRIOS ────────────────────────────────────────────────────────────
+function renderRelatorios(){
+  const cs=Object.values(D.clients||{});
+  const selCid=S.relCid||(cs[0]?.id||'');
+  const selType=S.relType||'categoria';
+  const c=D.clients[selCid];
+  const ss=Object.values(D.sessions||{}).filter(s=>s.clientId===selCid)
+    .sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
+
+  // ── Helpers de tempo ──
+  const dayMins=s=>{
+    const procs=Object.values(s.processes||{});
+    if(!procs.length)return 0;
+    const starts=procs.map(p=>t2m(p.startTime||'09:00'));
+    const ends=procs.map(p=>t2m(p.endTime||'10:00'));
+    return Math.max(...ends)-Math.min(...starts);
+  };
+  const fmt=mins=>{const h=Math.floor(mins/60);const m=mins%60;return h+'h'+(m?m+'min':'');};
+
+  // ── RELATÓRIO POR CATEGORIA ──
+  function relCategoria(){
+    const catMap={};
+    ss.forEach(s=>{
+      Object.values(s.processes||{}).forEach(p=>{
+        const cat=p.catalogId&&D.catalog[p.catalogId]?D.catalog[p.catalogId].category||'Geral':'Manual/Sem categoria';
+        if(!catMap[cat])catMap[cat]={procs:[],mins:0};
+        const mins=t2m(p.endTime||'10:00')-t2m(p.startTime||'09:00');
+        catMap[cat].procs.push({...p,sessionLabel:s.label,sessionDate:s.date,mins});
+        catMap[cat].mins+=mins;
+      });
+    });
+    const catNames=Object.keys(catMap).sort();
+    const totalMins=catNames.reduce((a,g)=>a+catMap[g].mins,0);
+    return `
+    <div style="margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;">
+      <div class="stat"><div style="font-size:11px;color:var(--text2);">Total de horas</div><div style="font-size:24px;font-weight:500;color:var(--blue);">${fmt(totalMins)}</div></div>
+      <div class="stat"><div style="font-size:11px;color:var(--text2);">Categorias</div><div style="font-size:24px;font-weight:500;">${catNames.length}</div></div>
+      <div class="stat"><div style="font-size:11px;color:var(--text2);">Processos</div><div style="font-size:24px;font-weight:500;">${catNames.reduce((a,g)=>a+catMap[g].procs.length,0)}</div></div>
+      <div class="stat"><div style="font-size:11px;color:var(--text2);">Dias de treinamento</div><div style="font-size:24px;font-weight:500;">${ss.length}</div></div>
+    </div>
+    ${catNames.map(g=>{
+      const {procs,mins}=catMap[g];
+      const pct=totalMins>0?Math.round(mins/totalMins*100):0;
+      const done=procs.filter(p=>p.status==='realizado'||p.status==='video').length;
+      return `<div class="card" style="margin-bottom:14px;overflow:hidden;">
+        <div style="padding:10px 16px;background:var(--blue-bg);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-weight:600;color:var(--blue-t);">📂 ${g}</span>
+            <span style="font-size:11px;color:var(--blue-t);">${procs.length} processo(s) · ${done} concluídos</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="font-size:11px;color:var(--blue-t);">${pct}% do total</div>
+            <div style="font-weight:600;color:var(--blue-t);font-size:15px;">⏱ ${fmt(mins)}</div>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+        <table class="tbl" style="min-width:500px;">
+          <thead><tr><th>Processo</th><th>Dia</th><th>Data</th><th>Responsável</th><th>Horário</th><th>Duração</th><th>Status</th></tr></thead>
+          <tbody>${procs.map(p=>{
+            const tr=gu(p.trainerId);
+            return `<tr>
+              <td style="font-weight:500;">${p.name}</td>
+              <td style="color:var(--text2);">${p.sessionLabel}</td>
+              <td style="color:var(--text2);font-size:12px;white-space:nowrap;">${fdws(p.sessionDate)}</td>
+              <td style="color:var(--text2);">${tr?tr.name||tr.email:'—'}</td>
+              <td style="color:var(--text2);font-size:12px;white-space:nowrap;">${p.startTime||'—'}–${p.endTime||'—'}</td>
+              <td style="color:var(--blue);font-weight:500;">${fmt(p.mins)}</td>
+              <td><span class="badge ${PSTAT[p.status]?.cls||'bi'}">${PSTAT[p.status]?.l||p.status}</span></td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+        </div>
+      </div>`;
+    }).join('')}`;
+  }
+
+  // ── RELATÓRIO POR INSTRUTOR ──
+  function relInstrutor(){
+    const instMap={};
+    ss.forEach(s=>{
+      const dayM=dayMins(s);
+      const procs=Object.values(s.processes||{});
+      // Instrutores que aparecem neste dia
+      const instIds=[...new Set(procs.map(p=>p.trainerId).filter(Boolean))];
+      instIds.forEach(uid=>{
+        if(!instMap[uid])instMap[uid]={sessions:[],totalMins:0,procs:[]};
+        const myProcs=procs.filter(p=>p.trainerId===uid);
+        // Horas do instrutor neste dia = span dos seus processos
+        const myStarts=myProcs.map(p=>t2m(p.startTime||'09:00'));
+        const myEnds=myProcs.map(p=>t2m(p.endTime||'10:00'));
+        const myMins=myProcs.length>0?Math.max(...myEnds)-Math.min(...myStarts):0;
+        instMap[uid].sessions.push({s,myMins,myProcs});
+        instMap[uid].totalMins+=myMins;
+        instMap[uid].procs.push(...myProcs.map(p=>({...p,sessionLabel:s.label,sessionDate:s.date})));
+      });
+    });
+    const instIds=Object.keys(instMap).sort((a,b)=>instMap[b].totalMins-instMap[a].totalMins);
+    const totalMins=instIds.reduce((a,id)=>a+instMap[id].totalMins,0);
+
+    // Horas por categoria (cross-instrutor)
+    const catMins={};
+    Object.values(instMap).forEach(({procs})=>{
+      procs.forEach(p=>{
+        const mins=t2m(p.endTime||'10:00')-t2m(p.startTime||'09:00');
+        const cat=p.catalogId&&D.catalog[p.catalogId]?D.catalog[p.catalogId].category||'Geral':'Manual';
+        catMins[cat]=(catMins[cat]||0)+mins;
+      });
+    });
+
+    return `
+    <div style="margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;">
+      <div class="stat"><div style="font-size:11px;color:var(--text2);">Total de horas</div><div style="font-size:24px;font-weight:500;color:var(--blue);">${fmt(totalMins)}</div></div>
+      <div class="stat"><div style="font-size:11px;color:var(--text2);">Instrutores</div><div style="font-size:24px;font-weight:500;">${instIds.length}</div></div>
+      <div class="stat"><div style="font-size:11px;color:var(--text2);">Dias de treinamento</div><div style="font-size:24px;font-weight:500;">${ss.length}</div></div>
+    </div>
+
+    <!-- Horas por categoria -->
+    <div class="card" style="padding:16px;margin-bottom:16px;">
+      <h3 style="font-size:13px;font-weight:500;margin-bottom:12px;">⏱ Horas por categoria</h3>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        ${Object.entries(catMins).sort((a,b)=>b[1]-a[1]).map(([cat,mins])=>`
+          <div style="padding:8px 14px;background:var(--blue-bg);border-radius:var(--r);">
+            <div style="font-size:11px;color:var(--blue-t);">📂 ${cat}</div>
+            <div style="font-size:18px;font-weight:600;color:var(--blue-t);">${fmt(mins)}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    ${instIds.map(uid=>{
+      const u=gu(uid);const {sessions,totalMins:iMins,procs}=instMap[uid];
+      const done=procs.filter(p=>p.status==='realizado'||p.status==='video').length;
+      const maxMins=instIds.reduce((m,id)=>Math.max(m,instMap[id].totalMins),0);
+      return `<div class="card" style="margin-bottom:14px;overflow:hidden;">
+        <div style="padding:12px 16px;background:var(--surface2);display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);">
+          ${av(u?.name||u?.email||'?',36)}
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:500;font-size:14px;">${u?.name||u?.email||'Desconhecido'}</div>
+            <div style="font-size:11px;color:var(--text2);">${sessions.length} dia(s) · ${procs.length} processo(s) · ${done} concluídos</div>
+            <div style="margin-top:5px;height:6px;background:var(--border);border-radius:3px;max-width:300px;overflow:hidden;">
+              <div style="height:100%;width:${maxMins>0?Math.round(iMins/maxMins*100):0}%;background:var(--blue);border-radius:3px;"></div>
+            </div>
+          </div>
+          <div style="font-size:22px;font-weight:600;color:var(--blue);">⏱ ${fmt(iMins)}</div>
+        </div>
+        <div style="overflow-x:auto;">
+        <table class="tbl" style="min-width:500px;">
+          <thead><tr><th>Dia</th><th>Data</th><th>Horas no dia</th><th>Processos</th><th>Categoria</th><th>Status</th></tr></thead>
+          <tbody>${sessions.map(({s,myMins,myProcs})=>`<tr>
+            <td style="font-weight:500;">${s.label}</td>
+            <td style="color:var(--text2);white-space:nowrap;">${fdws(s.date)}</td>
+            <td style="color:var(--blue);font-weight:500;">${fmt(myMins)}</td>
+            <td style="color:var(--text2);font-size:12px;">${myProcs.map(p=>p.name).join(', ')}</td>
+            <td style="color:var(--text2);font-size:12px;">${[...new Set(myProcs.map(p=>p.catalogId&&D.catalog[p.catalogId]?D.catalog[p.catalogId].category||'Geral':'Manual'))].join(', ')}</td>
+            <td>${[...new Set(myProcs.map(p=>p.status))].map(st=>`<span class="badge ${PSTAT[st]?.cls||'bi'}" style="font-size:9px;">${PSTAT[st]?.l||st}</span>`).join(' ')}</td>
+          </tr>`).join('')}
+          <tr style="background:var(--blue-bg);font-weight:500;">
+            <td colspan="2" style="color:var(--blue-t);">TOTAL</td>
+            <td style="color:var(--blue);font-weight:700;">${fmt(iMins)}</td>
+            <td colspan="3" style="color:var(--text2);font-size:12px;">${procs.length} processos</td>
+          </tr>
+          </tbody>
+        </table>
+        </div>
+      </div>`;
+    }).join('')}`;
+  }
+
+  return `<div class="ph">
+    <div><h2>Relatórios</h2><p>Acompanhamento por categoria e instrutor</p></div>
+    <button class="btn btn-p" onclick="printRelatorio()">📄 Exportar PDF</button>
+  </div>
+
+  <!-- Filtros -->
+  <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center;">
+    <select class="inp" style="width:auto;" data-action="relCid">
+      ${cs.map(c=>`<option value="${c.id}"${selCid===c.id?' selected':''}>${c.name}</option>`).join('')}
+    </select>
+    <div style="display:flex;border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;">
+      <button class="btn" style="border:none;border-radius:0;padding:7px 16px;${selType==='categoria'?'background:var(--text);color:#fff;':''}" data-action="relType" data-val="categoria">Por Categoria</button>
+      <button class="btn" style="border:none;border-radius:0;border-left:1px solid var(--border2);padding:7px 16px;${selType==='instrutor'?'background:var(--text);color:#fff;':''}" data-action="relType" data-val="instrutor">Por Instrutor</button>
+    </div>
+  </div>
+
+  ${!selCid?'<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Selecione um cliente para gerar o relatório.</div>':
+    ss.length===0?'<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum dia de treinamento cadastrado para este cliente.</div>':
+    selType==='categoria'?relCategoria():relInstrutor()
+  }`;
+}
+
+window.printRelatorio=function(){
+  const content=document.getElementById('content').innerHTML;
+  const w=window.open('','_blank');
+  w.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Relatório — TrainControl JSR</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:Arial,sans-serif;color:#1a1a18;padding:32px;}
+    @media print{body{padding:0;}@page{margin:15mm;size:A4;}}
+    table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;}
+    th{background:#185fa5;color:#fff;padding:8px 10px;text-align:left;font-size:11px;}
+    td{padding:7px 10px;border-bottom:1px solid #e0ddd4;font-size:12px;}
+    tr:nth-child(even) td{background:#f5f4f0;}
+    .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:500;}
+    .bi{background:#e6f1fb;color:#0c447c;}
+    .bs{background:#eaf3de;color:#27500a;}
+    .bd{background:#fcebeb;color:#791f1f;}
+    .bw{background:#faeeda;color:#633806;}
+    .bgr{background:#f1efe8;color:#444441;}
+    .ph{display:none;}
+    button{display:none;}
+    select{display:none;}
+    .stat{display:inline-block;background:#f5f4f0;border-radius:8px;padding:10px 14px;margin:4px;}
+    h2{font-size:20px;color:#185fa5;margin-bottom:4px;}
+    h3{font-size:14px;margin:12px 0 8px;}
+  </style></head><body>${content}<script>window.onload=()=>window.print();<\/script></body></html>`);
+  w.document.close();
+};
 function renderAdmin(){
   const users=Object.values(D.users||{});
   const myUid=currentUser?.uid;
@@ -1942,6 +2157,7 @@ function render(){
   else if(S.view==='catalogo'){ct.innerHTML=renderCatalogo();setTimeout(initCatalogDragDrop,50);}
   else if(S.view==='clientes')ct.innerHTML=renderClientes();
   else if(S.view==='admin')ct.innerHTML=renderAdmin();
+  else if(S.view==='relatorios')ct.innerHTML=renderRelatorios();
 }
 
 // ── EVENTS ────────────────────────────────────────────────────────────────
@@ -2002,6 +2218,7 @@ document.addEventListener('click',async e=>{
     }
   }
   else if(a==='nav'){S.view=t.dataset.view;S.exp=null;closeSidebar();render();}
+  else if(a==='relType'){S.relType=t.dataset.val;render();}
   else if(a==='exp'){S.exp=S.exp===t.dataset.id?null:t.dataset.id;render();}
   else if(a==='client-tab'){S.clientTab[t.dataset.cid]=t.dataset.tab;render();}
   else if(a==='goto-h'){S.view='horarios';S.ttDay=t.dataset.sid;render();}
@@ -2302,6 +2519,7 @@ document.addEventListener('click',async e=>{
 document.addEventListener('change',e=>{
   if(e.target.dataset.action==='fC'){S.fC=e.target.value;render();}
   if(e.target.dataset.action==='fS'){S.fS=e.target.value;render();}
+  if(e.target.dataset.action==='relCid'){S.relCid=e.target.value;render();}
   if(e.target.id==='ttSel'){S.ttDay=e.target.value;render();}
 });
 document.getElementById('ov').addEventListener('click',e=>{if(e.target===document.getElementById('ov'))closeModal();});
