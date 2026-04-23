@@ -395,6 +395,15 @@ function addWorkdays(dateStr, n){
 
 // Diferença em dias corridos entre duas datas
 function daysDiff(a,b){ return Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/86400000); }
+
+// Retorna a segunda-feira da semana de uma data
+function getWeekMonday(dateStr){
+  const d=new Date(dateStr+'T00:00');
+  const day=d.getDay(); // 0=Dom, 1=Seg, ..., 6=Sab
+  const diff=day===0?-6:1-day; // voltar até segunda
+  d.setDate(d.getDate()+diff);
+  return d.toISOString().split('T')[0];
+}
 const avi = n => (n||'?').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
 const av = (n,sz=30) => `<div class="av" style="width:${sz}px;height:${sz}px;background:${avc(n)};color:#fff;font-size:${Math.round(sz*.36)}px;">${avi(n)}</div>`;
 const fd = d => { try{return new Date(d+'T00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});}catch(e){return d||'';} };
@@ -748,6 +757,7 @@ function renderCronograma(){
   ${(()=>{
     // Calcula semanas relativas ao primeiro dia da implantação
     const firstDate=filtered.length>0?filtered[0].date:null;
+    const firstMonday=firstDate?getWeekMonday(firstDate):null;
     let lastWeek=-1;
     return filtered.map((s,si)=>{
       const c=gc(s.clientId);
@@ -757,9 +767,9 @@ function renderCronograma(){
       const pct=tot>0?Math.round(done/tot*100):0;
       const isExp=S.exp===s.id;
       const isFirst=si===0; const isLast=si===filtered.length-1;
-      // Calcula número da semana relativa ao primeiro dia
-      const diffDays=firstDate?daysDiff(firstDate,s.date):0;
-      const weekNum=Math.floor(diffDays/7)+1;
+      // Semana real: baseada na segunda-feira da semana de cada dia
+      const sessionMonday=getWeekMonday(s.date);
+      const weekNum=firstMonday?Math.floor(daysDiff(firstMonday,sessionMonday)/7)+1:1;
       const weekDivider=weekNum!==lastWeek?('<div style="display:flex;align-items:center;gap:10px;margin:'+(si===0?'0':'16px')+' 0 10px;"><div style="background:var(--blue);color:#fff;font-size:11px;font-weight:600;padding:3px 14px;border-radius:20px;">Semana '+weekNum+'</div><div style="flex:1;height:1px;background:var(--border);"></div></div>'):'';
       lastWeek=weekNum;
     const dayCard = `<div class="day-card">
