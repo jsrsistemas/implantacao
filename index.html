@@ -585,9 +585,15 @@ function renderSidebar(){
 // ── DASHBOARD ─────────────────────────────────────────────────────────────
 function renderDashboard(){
   const today=new Date().toISOString().split('T')[0];
-  const ss=myS().sort((a,b)=>a.date.localeCompare(b.date));
+  const allSs=myS().sort((a,b)=>a.date.localeCompare(b.date));
   const cs=myC();
-  const allP=ss.flatMap(s=>Object.values(s.processes||{}));
+  const selDashCid=S.dashCid||'';
+  const selDashInst=S.dashInst||'';
+  // Aplica filtros
+  const ss=allSs.filter(s=>!selDashCid||s.clientId===selDashCid);
+  const allUsers=Object.values(D.users||{}).filter(u=>u.role==='instrutor'||u.role==='admin');
+  let allP=ss.flatMap(s=>Object.values(s.processes||{}));
+  if(selDashInst) allP=allP.filter(p=>p.trainerId===selDashInst);
   const done=allP.filter(p=>p.status==='realizado'||p.status==='video').length;
   const pend=allP.filter(p=>p.status==='pendente').length;
   const pct=allP.length>0?Math.round(done/allP.length*100):0;
@@ -621,6 +627,18 @@ function renderDashboard(){
   const byClient=cs.map(c=>({c,sessions:ss.filter(s=>s.clientId===c.id)})).filter(x=>x.sessions.length>0);
 
   return `<div class="ph"><div><h2>Dashboard</h2><p>Visão geral das implantações</p></div></div>
+
+  <!-- FILTROS -->
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+    <select class="inp" style="width:auto;font-size:12px;" data-action="dashCid">
+      <option value="">Todos os clientes</option>
+      ${cs.map(c=>`<option value="${c.id}"${selDashCid===c.id?' selected':''}>${c.name}</option>`).join('')}
+    </select>
+    <select class="inp" style="width:auto;font-size:12px;" data-action="dashInst">
+      <option value="">Todos os instrutores</option>
+      ${allUsers.map(u=>`<option value="${u.uid}"${selDashInst===u.uid?' selected':''}>${u.name||u.email}</option>`).join('')}
+    </select>
+  </div>
 
   <!-- STATS -->
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
@@ -838,9 +856,12 @@ function renderCronograma(){
               </div>
               ${proc.trainees&&proc.trainees!='OK'?`<div style="font-size:11px;color:var(--text2);margin-top:1px;">👥 ${proc.trainees}</div>`:''}
               ${proc.obs?`<div style="font-size:11px;color:var(--amber);margin-top:4px;background:var(--amber-bg);padding:4px 8px;border-radius:5px;display:inline-block;">💬 ${proc.obs}</div>`:''}
-              ${proc.rep1||proc.rep2?`<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
-                ${proc.rep1?repBadge(proc.rep1,rep1conf,rep1key):''}
-                ${proc.rep2?repBadge(proc.rep2,rep2conf,rep2key):''}
+              ${proc.rep1||proc.rep2?`<div style="margin-top:6px;">
+                <div style="font-size:10px;color:var(--text3);font-weight:500;margin-bottom:3px;">REPLICADORES</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  ${proc.rep1?repBadge(proc.rep1,rep1conf,rep1key):''}
+                  ${proc.rep2?repBadge(proc.rep2,rep2conf,rep2key):''}
+                </div>
               </div>`:''}
             </div>
             ${isE?`<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px;">
@@ -1180,34 +1201,54 @@ function renderRelatorios(){
 
   // ── RELATÓRIO POR CATEGORIA ──
   function relCategoria(){
-    const catMap={};
+    // Para cada dia, agrupa processos por categoria e calcula o INTERVALO (min início → max fim)
+    const catMap={}; // cat → {mins, entries:[{sessionLabel, sessionDate, startTime, endTime, procs:[]}]}
     ss.forEach(s=>{
-      Object.values(s.processes||{}).forEach(p=>{
+      const procs=Object.values(s.processes||{});
+      // Agrupa processos da sessão por categoria
+      const bycat={};
+      procs.forEach(p=>{
         const cat=p.catalogId&&D.catalog[p.catalogId]?D.catalog[p.catalogId].category||'Geral':'Manual/Sem categoria';
-        if(!catMap[cat])catMap[cat]={procs:[],mins:0};
-        const mins=t2m(p.endTime||'10:00')-t2m(p.startTime||'09:00');
-        catMap[cat].procs.push({...p,sessionLabel:s.label,sessionDate:s.date,mins});
-        catMap[cat].mins+=mins;
+        if(!bycat[cat])bycat[cat]=[];
+        bycat[cat].push(p);
+      });
+      Object.entries(bycat).forEach(([cat,cprocs])=>{
+        if(!catMap[cat])catMap[cat]={mins:0,entries:[]};
+        // Intervalo do dia para esta categoria
+        const starts=cprocs.map(p=>t2m(p.startTime||'09:00'));
+        const ends=cprocs.map(p=>t2m(p.endTime||'10:00'));
+        const blockMins=Math.max(...ends)-Math.min(...starts);
+        catMap[cat].mins+=blockMins;
+        catMap[cat].entries.push({
+          sessionLabel:s.label, sessionDate:s.date,
+          startTime:new Date(0,0,0,0,Math.min(...starts)).toTimeString().slice(0,5),
+          endTime:new Date(0,0,0,0,Math.max(...ends)).toTimeString().slice(0,5),
+          blockMins, procs:cprocs
+        });
       });
     });
-    const catNames=Object.keys(catMap).sort();
+    const catNames=Object.keys(catMap).sort((a,b)=>catMap[b].mins-catMap[a].mins);
     const totalMins=catNames.reduce((a,g)=>a+catMap[g].mins,0);
     return `
     <div style="margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;">
       <div class="stat"><div style="font-size:11px;color:var(--text2);">Total de horas</div><div style="font-size:24px;font-weight:500;color:var(--blue);">${fmt(totalMins)}</div></div>
       <div class="stat"><div style="font-size:11px;color:var(--text2);">Categorias</div><div style="font-size:24px;font-weight:500;">${catNames.length}</div></div>
-      <div class="stat"><div style="font-size:11px;color:var(--text2);">Processos</div><div style="font-size:24px;font-weight:500;">${catNames.reduce((a,g)=>a+catMap[g].procs.length,0)}</div></div>
+      <div class="stat"><div style="font-size:11px;color:var(--text2);">Processos</div><div style="font-size:24px;font-weight:500;">${catNames.reduce((a,g)=>a+catMap[g].entries.reduce((s,e)=>s+e.procs.length,0),0)}</div></div>
       <div class="stat"><div style="font-size:11px;color:var(--text2);">Dias de treinamento</div><div style="font-size:24px;font-weight:500;">${ss.length}</div></div>
     </div>
+    <div style="font-size:11px;color:var(--text2);background:var(--surface2);border-radius:var(--r);padding:8px 12px;margin-bottom:14px;">
+      ℹ️ Horas calculadas pelo <strong>intervalo do bloco por categoria por dia</strong> — do início do primeiro processo ao fim do último processo daquela categoria naquele dia.
+    </div>
     ${catNames.map(g=>{
-      const {procs,mins}=catMap[g];
+      const {mins,entries}=catMap[g];
       const pct=totalMins>0?Math.round(mins/totalMins*100):0;
-      const done=procs.filter(p=>p.status==='realizado'||p.status==='video').length;
+      const allProcs=entries.flatMap(e=>e.procs);
+      const done=allProcs.filter(p=>p.status==='realizado'||p.status==='video').length;
       return `<div class="card" style="margin-bottom:14px;overflow:hidden;">
         <div style="padding:10px 16px;background:var(--blue-bg);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
           <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-weight:600;color:var(--blue-t);">📂 ${g}</span>
-            <span style="font-size:11px;color:var(--blue-t);">${procs.length} processo(s) · ${done} concluídos</span>
+            <span style="font-size:11px;color:var(--blue-t);">${allProcs.length} processo(s) · ${done} concluídos</span>
           </div>
           <div style="display:flex;align-items:center;gap:12px;">
             <div style="font-size:11px;color:var(--blue-t);">${pct}% do total</div>
@@ -1216,17 +1257,16 @@ function renderRelatorios(){
         </div>
         <div style="overflow-x:auto;">
         <table class="tbl" style="min-width:500px;">
-          <thead><tr><th>Processo</th><th>Dia</th><th>Data</th><th>Responsável</th><th>Horário</th><th>Duração</th><th>Status</th></tr></thead>
-          <tbody>${procs.map(p=>{
-            const tr=gu(p.trainerId);
+          <thead><tr><th>Dia</th><th>Data</th><th>Bloco de horas</th><th>Duração</th><th>Processos incluídos</th><th>Status</th></tr></thead>
+          <tbody>${entries.map(e=>{
+            const statuses=[...new Set(e.procs.map(p=>p.status))];
             return `<tr>
-              <td style="font-weight:500;">${p.name}</td>
-              <td style="color:var(--text2);">${p.sessionLabel}</td>
-              <td style="color:var(--text2);font-size:12px;white-space:nowrap;">${fdws(p.sessionDate)}</td>
-              <td style="color:var(--text2);">${tr?tr.name||tr.email:'—'}</td>
-              <td style="color:var(--text2);font-size:12px;white-space:nowrap;">${p.startTime||'—'}–${p.endTime||'—'}</td>
-              <td style="color:var(--blue);font-weight:500;">${fmt(p.mins)}</td>
-              <td><span class="badge ${PSTAT[p.status]?.cls||'bi'}">${PSTAT[p.status]?.l||p.status}</span></td>
+              <td style="font-weight:500;">${e.sessionLabel}</td>
+              <td style="color:var(--text2);font-size:12px;white-space:nowrap;">${fdws(e.sessionDate)}</td>
+              <td style="color:var(--text2);font-size:12px;white-space:nowrap;">${e.startTime}–${e.endTime}</td>
+              <td style="color:var(--blue);font-weight:500;">${fmt(e.blockMins)}</td>
+              <td style="color:var(--text2);font-size:12px;">${e.procs.map(p=>p.name).join(', ')}</td>
+              <td>${statuses.map(st=>`<span class="badge ${PSTAT[st]?.cls||'bi'}" style="font-size:9px;">${PSTAT[st]?.l||st}</span>`).join(' ')}</td>
             </tr>`;
           }).join('')}</tbody>
         </table>
@@ -1237,34 +1277,52 @@ function renderRelatorios(){
 
   // ── RELATÓRIO POR INSTRUTOR ──
   function relInstrutor(){
+    // Para cada instrutor, para cada dia, calcula o INTERVALO dos seus processos
     const instMap={};
     ss.forEach(s=>{
-      const dayM=dayMins(s);
       const procs=Object.values(s.processes||{});
-      // Instrutores que aparecem neste dia
       const instIds=[...new Set(procs.map(p=>p.trainerId).filter(Boolean))];
       instIds.forEach(uid=>{
-        if(!instMap[uid])instMap[uid]={sessions:[],totalMins:0,procs:[]};
+        if(!instMap[uid])instMap[uid]={sessions:[],totalMins:0};
         const myProcs=procs.filter(p=>p.trainerId===uid);
-        // Horas do instrutor neste dia = span dos seus processos
         const myStarts=myProcs.map(p=>t2m(p.startTime||'09:00'));
         const myEnds=myProcs.map(p=>t2m(p.endTime||'10:00'));
+        // Intervalo do instrutor neste dia
         const myMins=myProcs.length>0?Math.max(...myEnds)-Math.min(...myStarts):0;
-        instMap[uid].sessions.push({s,myMins,myProcs});
+        // Horas por categoria neste dia para este instrutor
+        const byCat={};
+        myProcs.forEach(p=>{
+          const cat=p.catalogId&&D.catalog[p.catalogId]?D.catalog[p.catalogId].category||'Geral':'Manual';
+          if(!byCat[cat])byCat[cat]=[];
+          byCat[cat].push(p);
+        });
+        const catBlocks={};
+        Object.entries(byCat).forEach(([cat,cprocs])=>{
+          const cs=cprocs.map(p=>t2m(p.startTime||'09:00'));
+          const ce=cprocs.map(p=>t2m(p.endTime||'10:00'));
+          catBlocks[cat]=Math.max(...ce)-Math.min(...cs);
+        });
+        instMap[uid].sessions.push({s,myMins,myProcs,catBlocks});
         instMap[uid].totalMins+=myMins;
-        instMap[uid].procs.push(...myProcs.map(p=>({...p,sessionLabel:s.label,sessionDate:s.date})));
       });
     });
     const instIds=Object.keys(instMap).sort((a,b)=>instMap[b].totalMins-instMap[a].totalMins);
     const totalMins=instIds.reduce((a,id)=>a+instMap[id].totalMins,0);
 
-    // Horas por categoria (cross-instrutor)
-    const catMins={};
-    Object.values(instMap).forEach(({procs})=>{
+    // Horas por categoria global (span por categoria por dia, sem duplicar instrutores)
+    const catMinsGlobal={};
+    ss.forEach(s=>{
+      const procs=Object.values(s.processes||{});
+      const byCat={};
       procs.forEach(p=>{
-        const mins=t2m(p.endTime||'10:00')-t2m(p.startTime||'09:00');
         const cat=p.catalogId&&D.catalog[p.catalogId]?D.catalog[p.catalogId].category||'Geral':'Manual';
-        catMins[cat]=(catMins[cat]||0)+mins;
+        if(!byCat[cat])byCat[cat]=[];
+        byCat[cat].push(p);
+      });
+      Object.entries(byCat).forEach(([cat,cprocs])=>{
+        const cs=cprocs.map(p=>t2m(p.startTime||'09:00'));
+        const ce=cprocs.map(p=>t2m(p.endTime||'10:00'));
+        catMinsGlobal[cat]=(catMinsGlobal[cat]||0)+(Math.max(...ce)-Math.min(...cs));
       });
     });
 
@@ -1274,12 +1332,14 @@ function renderRelatorios(){
       <div class="stat"><div style="font-size:11px;color:var(--text2);">Instrutores</div><div style="font-size:24px;font-weight:500;">${instIds.length}</div></div>
       <div class="stat"><div style="font-size:11px;color:var(--text2);">Dias de treinamento</div><div style="font-size:24px;font-weight:500;">${ss.length}</div></div>
     </div>
-
-    <!-- Horas por categoria -->
+    <div style="font-size:11px;color:var(--text2);background:var(--surface2);border-radius:var(--r);padding:8px 12px;margin-bottom:14px;">
+      ℹ️ Horas calculadas pelo <strong>intervalo por instrutor por dia</strong> — do início do primeiro processo ao fim do último processo do instrutor naquele dia.
+    </div>
+    <!-- Horas por categoria global -->
     <div class="card" style="padding:16px;margin-bottom:16px;">
-      <h3 style="font-size:13px;font-weight:500;margin-bottom:12px;">⏱ Horas por categoria</h3>
+      <h3 style="font-size:13px;font-weight:500;margin-bottom:12px;">⏱ Horas por categoria (implantação completa)</h3>
       <div style="display:flex;flex-wrap:wrap;gap:8px;">
-        ${Object.entries(catMins).sort((a,b)=>b[1]-a[1]).map(([cat,mins])=>`
+        ${Object.entries(catMinsGlobal).sort((a,b)=>b[1]-a[1]).map(([cat,mins])=>`
           <div style="padding:8px 14px;background:var(--blue-bg);border-radius:var(--r);">
             <div style="font-size:11px;color:var(--blue-t);">📂 ${cat}</div>
             <div style="font-size:18px;font-weight:600;color:var(--blue-t);">${fmt(mins)}</div>
@@ -1288,36 +1348,52 @@ function renderRelatorios(){
     </div>
 
     ${instIds.map(uid=>{
-      const u=gu(uid);const {sessions,totalMins:iMins,procs}=instMap[uid];
-      const done=procs.filter(p=>p.status==='realizado'||p.status==='video').length;
+      const u=gu(uid);const {sessions,totalMins:iMins}=instMap[uid];
+      const allProcs=sessions.flatMap(s=>s.myProcs);
+      const done=allProcs.filter(p=>p.status==='realizado'||p.status==='video').length;
       const maxMins=instIds.reduce((m,id)=>Math.max(m,instMap[id].totalMins),0);
+      // Horas por categoria deste instrutor
+      const instCatMins={};
+      sessions.forEach(({catBlocks})=>{
+        Object.entries(catBlocks).forEach(([cat,m])=>{instCatMins[cat]=(instCatMins[cat]||0)+m;});
+      });
       return `<div class="card" style="margin-bottom:14px;overflow:hidden;">
         <div style="padding:12px 16px;background:var(--surface2);display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--border);">
           ${av(u?.name||u?.email||'?',36)}
           <div style="flex:1;min-width:0;">
             <div style="font-weight:500;font-size:14px;">${u?.name||u?.email||'Desconhecido'}</div>
-            <div style="font-size:11px;color:var(--text2);">${sessions.length} dia(s) · ${procs.length} processo(s) · ${done} concluídos</div>
+            <div style="font-size:11px;color:var(--text2);">${sessions.length} dia(s) · ${allProcs.length} processo(s) · ${done} concluídos</div>
             <div style="margin-top:5px;height:6px;background:var(--border);border-radius:3px;max-width:300px;overflow:hidden;">
               <div style="height:100%;width:${maxMins>0?Math.round(iMins/maxMins*100):0}%;background:var(--blue);border-radius:3px;"></div>
+            </div>
+            <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">
+              ${Object.entries(instCatMins).sort((a,b)=>b[1]-a[1]).map(([cat,m])=>`<span style="font-size:10px;padding:2px 8px;background:var(--blue-bg);color:var(--blue-t);border-radius:20px;">📂 ${cat}: ${fmt(m)}</span>`).join('')}
             </div>
           </div>
           <div style="font-size:22px;font-weight:600;color:var(--blue);">⏱ ${fmt(iMins)}</div>
         </div>
         <div style="overflow-x:auto;">
         <table class="tbl" style="min-width:500px;">
-          <thead><tr><th>Dia</th><th>Data</th><th>Horas no dia</th><th>Processos</th><th>Categoria</th><th>Status</th></tr></thead>
-          <tbody>${sessions.map(({s,myMins,myProcs})=>`<tr>
-            <td style="font-weight:500;">${s.label}</td>
-            <td style="color:var(--text2);white-space:nowrap;">${fdws(s.date)}</td>
-            <td style="color:var(--blue);font-weight:500;">${fmt(myMins)}</td>
-            <td style="color:var(--text2);font-size:12px;">${myProcs.map(p=>p.name).join(', ')}</td>
-            <td style="color:var(--text2);font-size:12px;">${[...new Set(myProcs.map(p=>p.catalogId&&D.catalog[p.catalogId]?D.catalog[p.catalogId].category||'Geral':'Manual'))].join(', ')}</td>
-            <td>${[...new Set(myProcs.map(p=>p.status))].map(st=>`<span class="badge ${PSTAT[st]?.cls||'bi'}" style="font-size:9px;">${PSTAT[st]?.l||st}</span>`).join(' ')}</td>
-          </tr>`).join('')}
+          <thead><tr><th>Dia</th><th>Data</th><th>Bloco do dia</th><th>Horas</th><th>Processos</th><th>Categorias</th><th>Status</th></tr></thead>
+          <tbody>${sessions.map(({s,myMins,myProcs,catBlocks})=>{
+            const starts=myProcs.map(p=>t2m(p.startTime||'09:00'));
+            const ends=myProcs.map(p=>t2m(p.endTime||'10:00'));
+            const st=new Date(0,0,0,0,Math.min(...starts)).toTimeString().slice(0,5);
+            const et=new Date(0,0,0,0,Math.max(...ends)).toTimeString().slice(0,5);
+            return `<tr>
+              <td style="font-weight:500;">${s.label}</td>
+              <td style="color:var(--text2);white-space:nowrap;">${fdws(s.date)}</td>
+              <td style="color:var(--text2);font-size:12px;white-space:nowrap;">${st}–${et}</td>
+              <td style="color:var(--blue);font-weight:500;">${fmt(myMins)}</td>
+              <td style="color:var(--text2);font-size:12px;">${myProcs.map(p=>p.name).join(', ')}</td>
+              <td style="font-size:11px;">${Object.entries(catBlocks).map(([cat,m])=>`<span style="background:var(--blue-bg);color:var(--blue-t);padding:1px 6px;border-radius:10px;font-size:10px;">${cat}: ${fmt(m)}</span>`).join(' ')}</td>
+              <td>${[...new Set(myProcs.map(p=>p.status))].map(st=>`<span class="badge ${PSTAT[st]?.cls||'bi'}" style="font-size:9px;">${PSTAT[st]?.l||st}</span>`).join(' ')}</td>
+            </tr>`;
+          }).join('')}
           <tr style="background:var(--blue-bg);font-weight:500;">
-            <td colspan="2" style="color:var(--blue-t);">TOTAL</td>
+            <td colspan="3" style="color:var(--blue-t);">TOTAL</td>
             <td style="color:var(--blue);font-weight:700;">${fmt(iMins)}</td>
-            <td colspan="3" style="color:var(--text2);font-size:12px;">${procs.length} processos</td>
+            <td colspan="3" style="color:var(--text2);font-size:12px;">${allProcs.length} processos · ${sessions.length} dias</td>
           </tr>
           </tbody>
         </table>
@@ -1818,6 +1894,17 @@ function openModal(type,data={}){
 function closeModal(){document.getElementById('ov').classList.remove('open');document.getElementById('mb').innerHTML='';}
 window.toggleSidebar=function(){const sb=document.getElementById('sidebar');const ov=document.getElementById('mob-overlay');sb.classList.toggle('open');ov.classList.toggle('open');}
 window.closeSidebar=function(){document.getElementById('sidebar').classList.remove('open');document.getElementById('mob-overlay').classList.remove('open');}
+window.confirmRmClient=async function(cid,cname){
+  const inp=document.getElementById('rmClientConfirm');
+  if(!inp||inp.value.trim()!==cname)return;
+  document.getElementById('ov').classList.remove('open');
+  showSync('syncing','Excluindo cliente...');
+  const sessions=Object.values(D.sessions||{}).filter(s=>s.clientId===cid);
+  const removes=[fbRemove(`/clients/${cid}`)];
+  sessions.forEach(s=>removes.push(fbRemove(`/sessions/${s.id}`)));
+  await Promise.all(removes);
+  showSync('synced','Cliente excluído ✓');
+};
 window.selectEpCatalog=function(el){
   document.querySelectorAll('.ep-cat-item').forEach(i=>{i.style.outline='';i.style.background=i.style.background;});
   el.style.outline='2px solid var(--blue)';
@@ -2246,13 +2333,44 @@ document.addEventListener('click',async e=>{
     const sessions=Object.values(D.sessions||{}).filter(s=>s.clientId===cid);
     const nDias=sessions.length;
     const nProcs=sessions.reduce((a,s)=>a+Object.keys(s.processes||{}).length,0);
-    if(!confirm(`⚠️ EXCLUIR CLIENTE: "${cname}"\n\nIsso vai remover permanentemente:\n• O cadastro do cliente\n• ${nDias} dia(s) de treinamento\n• ${nProcs} processo(s)\n• Todos os departamentos e replicadores\n\nEssa ação NÃO pode ser desfeita!\n\nDeseja continuar?`))return;
-    showSync('syncing','Excluindo...');
-    // Remove todas as sessões do cliente
-    const removes=[fbRemove(`/clients/${cid}`)];
-    sessions.forEach(s=>removes.push(fbRemove(`/sessions/${s.id}`)));
-    await Promise.all(removes);
-    showSync('synced','Cliente excluído ✓');
+    // Modal de confirmação bonito
+    document.getElementById('ov').classList.add('open');
+    document.getElementById('mb').innerHTML=`
+      <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="font-size:16px;font-weight:500;color:var(--red-t);">🗑 Excluir cliente</h3>
+        <button style="background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--text2);" data-action="close-modal">×</button>
+      </div>
+      <div style="padding:20px 24px;">
+        <div style="background:var(--red-bg);border:1px solid var(--red-t);border-radius:var(--r);padding:14px;margin-bottom:16px;">
+          <div style="font-weight:600;color:var(--red-t);margin-bottom:8px;">⚠️ Ação irreversível!</div>
+          <div style="font-size:13px;color:var(--red-t);">Isso vai remover permanentemente <strong>"${esc(cname)}"</strong> e todos os seus dados.</div>
+        </div>
+        <div style="font-size:13px;color:var(--text2);margin-bottom:16px;">
+          <div style="margin-bottom:4px;">Será excluído:</div>
+          <div style="padding:10px 14px;background:var(--surface2);border-radius:var(--r);display:flex;flex-direction:column;gap:4px;">
+            <div>📅 <strong>${nDias}</strong> dia(s) de treinamento</div>
+            <div>📋 <strong>${nProcs}</strong> processo(s)</div>
+            <div>👥 Todos os departamentos e replicadores</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:16px;">Para confirmar, digite o nome do cliente abaixo:</div>
+        <input class="inp" id="rmClientConfirm" placeholder="${esc(cname)}" style="margin-bottom:14px;">
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn" data-action="close-modal">Cancelar</button>
+          <button class="btn btn-d" id="rmClientBtn" onclick="confirmRmClient('${cid}','${esc(cname)}')" style="opacity:.5;cursor:not-allowed;" disabled>🗑 Excluir permanentemente</button>
+        </div>
+      </div>`;
+    // Habilita botão só quando nome está correto
+    setTimeout(()=>{
+      const inp=document.getElementById('rmClientConfirm');
+      const btn=document.getElementById('rmClientBtn');
+      if(inp&&btn) inp.addEventListener('input',()=>{
+        const match=inp.value.trim()===cname;
+        btn.disabled=!match;
+        btn.style.opacity=match?'1':'0.5';
+        btn.style.cursor=match?'pointer':'not-allowed';
+      });
+    },50);
   }  else if(a==='edit-day-click'){
     openModal('edit-day', {sid: t.dataset.sid});
   }
@@ -2529,6 +2647,8 @@ document.addEventListener('change',e=>{
   if(e.target.dataset.action==='fC'){S.fC=e.target.value;render();}
   if(e.target.dataset.action==='fS'){S.fS=e.target.value;render();}
   if(e.target.dataset.action==='relCid'){S.relCid=e.target.value;render();}
+  if(e.target.dataset.action==='dashCid'){S.dashCid=e.target.value;render();}
+  if(e.target.dataset.action==='dashInst'){S.dashInst=e.target.value;render();}
   if(e.target.id==='ttSel'){S.ttDay=e.target.value;render();}
 });
 document.getElementById('ov').addEventListener('click',e=>{if(e.target===document.getElementById('ov'))closeModal();});
