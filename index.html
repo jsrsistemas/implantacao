@@ -412,6 +412,15 @@ const fdw = d => { try{return new Date(d+'T00:00').toLocaleDateString('pt-BR',{w
 // Data com dia da semana abreviado: "27 abr · Seg"
 const fdws = d => { try{const dt=new Date(d+'T00:00');const day=dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});const wk=dt.toLocaleDateString('pt-BR',{weekday:'short'});return `${day} · ${wk.charAt(0).toUpperCase()+wk.slice(1)}`;}catch(e){return d||'';} };
 const t2m = t => { const[h,m]=(t||'00:00').split(':').map(Number);return h*60+(m||0); };
+// Desconta almoço de um bloco de tempo: retorna minutos líquidos
+function lunchDeduct(startM, endM, lunchStart, lunchEnd){
+  const lS=t2m(lunchStart||'12:00'), lE=t2m(lunchEnd||'12:00');
+  if(lE<=lS) return Math.max(0,endM-startM); // sem almoço
+  const overlapStart=Math.max(startM,lS);
+  const overlapEnd=Math.min(endM,lE);
+  const overlap=Math.max(0,overlapEnd-overlapStart);
+  return Math.max(0,(endM-startM)-overlap);
+}
 const m2t = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 const pcol = p => p>=70?'var(--green)':p>=40?'var(--amber)':'var(--blue)';
 const pb = v => `<div class="pt"><div class="pf" style="width:${v}%;background:${pcol(v)};"></div></div>`;
@@ -714,7 +723,8 @@ function renderDashboard(){
         <div><span style="font-weight:500;font-size:15px;color:var(--blue-t);">${c.name}</span><span style="font-size:12px;color:var(--blue-t);margin-left:10px;">${sessions.length} dias · ${cD}/${cP.length} processos · ${cH.toFixed(1)}h</span></div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="font-weight:500;font-size:14px;color:${pcol(cPct)};">${cPct}%</span>
-          <button class="btn btn-sm btn-p" data-action="export-pdf" data-cid="${c.id}">📄 Exportar PDF</button>
+          <button class="btn btn-sm btn-p" data-action="export-pdf" data-cid="${c.id}" data-mode="cliente" title="PDF para o cliente">📄 PDF Cliente</button>
+          <button class="btn btn-sm btn-w" data-action="export-pdf" data-cid="${c.id}" data-mode="interno" title="PDF interno com obs. privadas">🔒 PDF Interno</button>
         </div>
       </div>
       ${sessions.map(s=>{
@@ -767,7 +777,10 @@ function renderCronograma(){
   const filtered=ss.filter(s=>!S.fC||s.clientId===S.fC).filter(s=>!S.fS||Object.values(s.processes||{}).some(proc=>proc.status===S.fS));
   return `<div class="ph">
     <div><h2>Cronograma de implantação</h2><p>Dias, processos e responsáveis</p></div>
-    ${isE?`<button class="btn btn-p" data-action="open-modal" data-modal="add-day">+ Novo dia</button>`:''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+      ${S.fC?`<button class="btn btn-p btn-sm" data-action="export-pdf" data-cid="${S.fC}" data-mode="cliente">📄 PDF Cliente</button><button class="btn btn-w btn-sm" data-action="export-pdf" data-cid="${S.fC}" data-mode="interno">🔒 PDF Interno</button>`:''}
+      ${isE?`<button class="btn btn-p" data-action="open-modal" data-modal="add-day">+ Novo dia</button>`:''}
+    </div>
   </div>
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
     <select class="inp" style="width:auto;font-size:12px;" data-action="fC">
@@ -811,6 +824,7 @@ function renderCronograma(){
             <div style="font-weight:500;font-size:14px;">${s.label}${s.notes?` — <span style="font-weight:400;color:var(--text2);font-size:12px;">${s.notes}</span>`:''}</div>
             <div style="font-size:11px;color:var(--text2);margin-top:2px;">${c?.name||''} · ${tot} processo(s) · ${done}/${tot} concluídos · <span style="color:${pcol(pct)};font-weight:500;">${pct}%</span></div>
             ${s.internalNotes&&isE?`<div style="margin-top:4px;display:inline-flex;align-items:center;gap:5px;background:#FFF8E6;border:1px solid #F0C040;border-radius:var(--r);padding:3px 9px;font-size:11px;color:#7A5000;"><span>🔒</span><span>${s.internalNotes}</span></div>`:''}
+            ${s.lunchStart&&s.lunchEnd&&s.lunchStart!==s.lunchEnd?`<div style="margin-top:3px;display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text3);">🍽 Almoço: ${s.lunchStart}–${s.lunchEnd}</div>`:''}
           </div>
           <span style="color:var(--text2);font-size:14px;flex-shrink:0;">${isExp?'▲':'▼'}</span>
         </div>
@@ -864,6 +878,7 @@ function renderCronograma(){
               </div>
               ${proc.trainees&&proc.trainees!='OK'?`<div style="font-size:11px;color:var(--text2);margin-top:1px;">👥 ${proc.trainees}</div>`:''}
               ${proc.obs?`<div style="font-size:11px;color:var(--amber);margin-top:4px;background:var(--amber-bg);padding:4px 8px;border-radius:5px;display:inline-block;">💬 ${proc.obs}</div>`:''}
+              ${proc.privObs?`<div style="font-size:11px;color:#7A5000;margin-top:4px;background:#FFF8E6;border:1px solid #F0C040;padding:4px 8px;border-radius:5px;display:inline-block;">🔒 ${proc.privObs}</div>`:''}
               ${proc.rep1||proc.rep2?`<div style="margin-top:6px;">
                 <div style="font-size:10px;color:var(--text3);font-weight:500;margin-bottom:3px;">REPLICADORES</div>
                 <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -965,7 +980,7 @@ function renderHorarios(){
 
   return `<div class="ph">
     <div><h2>Grade de horários</h2><p>Treinamentos do dia em ordem cronológica</p></div>
-    ${selS?`<button class="btn btn-p" data-action="export-pdf" data-cid="${selS.clientId}">📄 Exportar PDF</button>`:''}
+    ${selS?`<div style="display:flex;gap:6px;"><button class="btn btn-p" data-action="export-pdf" data-cid="${selS.clientId}" data-mode="cliente">📄 PDF Cliente</button><button class="btn btn-w" data-action="export-pdf" data-cid="${selS.clientId}" data-mode="interno">🔒 PDF Interno</button></div>`:''}
   </div>
   <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap;">
     <label style="font-size:12px;color:var(--text2);font-weight:500;">Selecionar dia:</label>
@@ -1233,7 +1248,8 @@ function renderRelatorios(){
         // Intervalo do dia para esta categoria
         const starts=cprocs.map(p=>t2m(p.startTime||'09:00'));
         const ends=cprocs.map(p=>t2m(p.endTime||'10:00'));
-        const blockMins=Math.max(...ends)-Math.min(...starts);
+        const rawMins=Math.max(...ends)-Math.min(...starts);
+        const blockMins=lunchDeduct(Math.min(...starts), Math.max(...ends), s.lunchStart, s.lunchEnd);
         catMap[cat].mins+=blockMins;
         catMap[cat].entries.push({
           sessionLabel:s.label, sessionDate:s.date,
@@ -1304,7 +1320,7 @@ function renderRelatorios(){
         const myStarts=myProcs.map(p=>t2m(p.startTime||'09:00'));
         const myEnds=myProcs.map(p=>t2m(p.endTime||'10:00'));
         // Intervalo do instrutor neste dia
-        const myMins=myProcs.length>0?Math.max(...myEnds)-Math.min(...myStarts):0;
+        const myMins=myProcs.length>0?lunchDeduct(Math.min(...myStarts),Math.max(...myEnds),s.lunchStart,s.lunchEnd):0;
         // Horas por categoria neste dia para este instrutor
         const byCat={};
         myProcs.forEach(p=>{
@@ -1316,7 +1332,7 @@ function renderRelatorios(){
         Object.entries(byCat).forEach(([cat,cprocs])=>{
           const cs=cprocs.map(p=>t2m(p.startTime||'09:00'));
           const ce=cprocs.map(p=>t2m(p.endTime||'10:00'));
-          catBlocks[cat]=Math.max(...ce)-Math.min(...cs);
+          catBlocks[cat]=lunchDeduct(Math.min(...cs),Math.max(...ce),s.lunchStart,s.lunchEnd);
         });
         instMap[uid].sessions.push({s,myMins,myProcs,catBlocks});
         instMap[uid].totalMins+=myMins;
@@ -1338,7 +1354,7 @@ function renderRelatorios(){
       Object.entries(byCat).forEach(([cat,cprocs])=>{
         const cs=cprocs.map(p=>t2m(p.startTime||'09:00'));
         const ce=cprocs.map(p=>t2m(p.endTime||'10:00'));
-        catMinsGlobal[cat]=(catMinsGlobal[cat]||0)+(Math.max(...ce)-Math.min(...cs));
+        catMinsGlobal[cat]=(catMinsGlobal[cat]||0)+lunchDeduct(Math.min(...cs),Math.max(...ce),s.lunchStart,s.lunchEnd);
       });
     });
 
@@ -1518,6 +1534,14 @@ function openModal(type,data={}){
       <div><label class="lbl">Cliente</label><select class="inp" id="fdCid"><option value="">Selecione...</option>${fOpts(cs,'')}</select></div>
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Rótulo</label><input class="inp" id="fdLabel" placeholder="Ex: 1° Dia"></div><div style="flex:1;"><label class="lbl">Data</label><input type="date" class="inp" id="fdDate"></div></div>
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Modalidade</label><select class="inp" id="fdMod"><option value="presencial">Presencial</option><option value="remoto">Remoto</option></select></div><div style="flex:1;"><label class="lbl">Observação</label><input class="inp" id="fdNotes" placeholder="Opcional"></div></div>
+      <div style="background:#F0F7FF;border:1px solid #B8D4F0;border-radius:var(--r);padding:11px;">
+        <label class="lbl" style="color:var(--blue-t);">🍽 Pausa para almoço (descontada das horas)</label>
+        <div style="display:flex;gap:10px;margin-top:6px;">
+          <div style="flex:1;"><label class="lbl" style="font-size:10px;">Início</label><input type="time" class="inp" id="fdLunchStart" value="12:00"></div>
+          <div style="flex:1;"><label class="lbl" style="font-size:10px;">Fim</label><input type="time" class="inp" id="fdLunchEnd" value="13:00"></div>
+        </div>
+        <div style="font-size:10px;color:var(--blue-t);margin-top:4px;">Deixe igual (12:00–12:00) se não houver almoço.</div>
+      </div>
       <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-day">Criar dia</button></div>
     </div>`;
   } else if(type==='edit-day'){
@@ -1528,6 +1552,14 @@ function openModal(type,data={}){
       <div><label class="lbl">Cliente</label><select class="inp" id="edCid"><option value="">Selecione...</option>${fOpts(cs,s?.clientId)}</select></div>
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Rótulo</label><input class="inp" id="edLabel" value="${esc(s?.label||'')}"></div><div style="flex:1;"><label class="lbl">Data</label><input type="date" class="inp" id="edDate" value="${s?.date||''}"></div></div>
       <div style="display:flex;gap:10px;"><div style="flex:1;"><label class="lbl">Modalidade</label><select class="inp" id="edMod"><option value="presencial"${s?.modality==='presencial'?' selected':''}>Presencial</option><option value="remoto"${s?.modality==='remoto'?' selected':''}>Remoto</option></select></div><div style="flex:1;"><label class="lbl">Observação pública</label><input class="inp" id="edNotes" value="${esc(s?.notes||'')}" placeholder="Aparece no cronograma e PDF"></div></div>
+      <div style="background:#F0F7FF;border:1px solid #B8D4F0;border-radius:var(--r);padding:11px;">
+        <label class="lbl" style="color:var(--blue-t);">🍽 Pausa para almoço (descontada das horas)</label>
+        <div style="display:flex;gap:10px;margin-top:6px;">
+          <div style="flex:1;"><label class="lbl" style="font-size:10px;">Início</label><input type="time" class="inp" id="edLunchStart" value="${s?.lunchStart||'12:00'}"></div>
+          <div style="flex:1;"><label class="lbl" style="font-size:10px;">Fim</label><input type="time" class="inp" id="edLunchEnd" value="${s?.lunchEnd||'13:00'}"></div>
+        </div>
+        <div style="font-size:10px;color:var(--blue-t);margin-top:4px;">Deixe igual (12:00–12:00) se não houver almoço.</div>
+      </div>
       <div style="background:#FFF8E6;border:1px solid #F0C040;border-radius:var(--r);padding:11px;">
         <label class="lbl" style="color:#7A5000;">🔒 Observação interna (só equipe JSR)</label>
         <textarea class="inp" id="edInternalNotes" rows="2" style="resize:vertical;background:#FFFDF0;" placeholder="Anotações internas — não aparece no PDF nem no link de confirmação...">${esc(s?.internalNotes||'')}</textarea>
@@ -1553,7 +1585,11 @@ function openModal(type,data={}){
           ${repField('fpRep2','Replicador 2 (opcional)',cl,'')}
         </div>
       </div>
-      <div><label class="lbl">Observação</label><textarea class="inp" id="fpObs" rows="2" style="resize:vertical;" placeholder="Detalhes ou instruções especiais..."></textarea></div>
+      <div><label class="lbl">Observação pública</label><textarea class="inp" id="fpObs" rows="2" style="resize:vertical;" placeholder="Aparece no PDF e na tela dos replicadores..."></textarea></div>
+      <div style="background:#FFF8E6;border:1px solid #F0C040;border-radius:var(--r);padding:10px;">
+        <label class="lbl" style="color:#7A5000;margin-bottom:4px;">🔒 Observação interna (só equipe JSR)</label>
+        <textarea class="inp" id="fpPrivObs" rows="2" style="resize:vertical;background:#FFFDF0;" placeholder="Não aparece no PDF nem para replicadores..."></textarea>
+      </div>
       <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-proc">Adicionar</button></div>
     </div>`;
   } else if(type==='edit-proc'){
@@ -1666,7 +1702,11 @@ function openModal(type,data={}){
           ${repField('epRep2','Replicador 2 (opcional)',cl,proc?.rep2||'')}
         </div>
       </div>
-      <div><label class="lbl">Observação</label><textarea class="inp" id="epObs" rows="2" style="resize:vertical;">${esc(proc?.obs||'')}</textarea></div>
+      <div><label class="lbl">Observação pública</label><textarea class="inp" id="epObs" rows="2" style="resize:vertical;" placeholder="Aparece no PDF e na tela dos replicadores...">${esc(proc?.obs||'')}</textarea></div>
+      <div style="background:#FFF8E6;border:1px solid #F0C040;border-radius:var(--r);padding:10px;">
+        <label class="lbl" style="color:#7A5000;margin-bottom:4px;">🔒 Observação interna (só equipe JSR)</label>
+        <textarea class="inp" id="epPrivObs" rows="2" style="resize:vertical;background:#FFFDF0;" placeholder="Não aparece no PDF nem para replicadores...">${esc(proc?.privObs||'')}</textarea>
+      </div>
       ${otherDays.length>0?`<div style="background:#F0F7FF;border:1px solid #B8D4F0;border-radius:var(--r);padding:11px;">
         <label class="lbl" style="color:var(--blue-t);">📅 Mover para outro dia (opcional)</label>
         <select class="inp" id="epMoveTo" style="margin-top:2px;" onchange="showDayProcesses(this.value)">
@@ -2067,8 +2107,9 @@ function toggleSidebar(){window.toggleSidebar();}
 function closeSidebar(){window.closeSidebar();}
 
 // ── EXPORT PDF ────────────────────────────────────────────────────────────
-function exportPDF(cid){
+function exportPDF(cid, mode='cliente'){
   const c=gc(cid);if(!c)return;
+  const isInternal=mode==='interno';
   const ss=myS().filter(s=>s.clientId===cid).sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
   const allP=ss.flatMap(s=>Object.values(s.processes||{}));
   const done=allP.filter(p=>p.status==='realizado'||p.status==='video').length;
@@ -2083,13 +2124,16 @@ function exportPDF(cid){
   const rows=ss.map(s=>{
     const procs=Object.values(s.processes||{}).sort((a,b)=>(a.order??999)-(b.order??999));
     if(!procs.length)return'';
-    return `<tr><td colspan="7" style="background:#e6f1fb;padding:8px 12px;font-weight:600;font-size:12px;color:#0c447c;border-top:2px solid #185fa5;">
-      ${s.label} — ${fdd(s.date)} &nbsp;<span style="background:${MOD_BG[s.modality]||'#f1efe8'};color:${MOD_COLOR[s.modality]||'#444'};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:500;">${MOD[s.modality]?.l||s.modality}</span>${s.notes?` &nbsp;— <em style="font-weight:400;color:#6b6a65;">${s.notes}</em>`:''}
+    // Linha do dia
+    const lunchInfo=s.lunchStart&&s.lunchEnd&&s.lunchStart!==s.lunchEnd?` &nbsp;🍽 ${s.lunchStart}–${s.lunchEnd}`:'';
+    const internalDayObs=isInternal&&s.internalNotes?`<div style="margin-top:4px;padding:3px 8px;background:#fff8e6;border-left:3px solid #f0c040;font-size:10px;color:#7a5000;font-style:italic;">🔒 ${s.internalNotes}</div>`:'';
+    return `<tr><td colspan="${isInternal?9:8}" style="background:#e6f1fb;padding:8px 12px;font-weight:600;font-size:12px;color:#0c447c;border-top:2px solid #185fa5;">
+      ${s.label} — ${fdd(s.date)} &nbsp;<span style="background:${MOD_BG[s.modality]||'#f1efe8'};color:${MOD_COLOR[s.modality]||'#444'};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:500;">${MOD[s.modality]?.l||s.modality}</span>${s.notes?` &nbsp;— <em style="font-weight:400;color:#6b6a65;">${s.notes}</em>`:''}${lunchInfo}
+      ${internalDayObs}
     </td></tr>
     ${procs.map((p,i)=>{
       const tr=gu(p.trainerId);const dept=c.depts?.[p.deptId];
       const bg=i%2===0?'#ffffff':'#f9f8f5';
-      // Replicadores com status de confirmação
       const repConfs=D.repconfirmations?.[s.id]||{};
       const rep1conf=p.rep1?Object.values(repConfs).find(rc=>rc.repName===p.rep1&&rc.processIds?.includes(p.id)):null;
       const rep2conf=p.rep2?Object.values(repConfs).find(rc=>rc.repName===p.rep2&&rc.processIds?.includes(p.id)):null;
@@ -2097,6 +2141,8 @@ function exportPDF(cid){
         p.rep1?`<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;background:${rep1conf?'#eaf3de':'#faeeda'};color:${rep1conf?'#27500a':'#633806'};margin-bottom:2px;">${rep1conf?'✅':'⏳'} ${p.rep1}</span>`:null,
         p.rep2?`<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;background:${rep2conf?'#eaf3de':'#faeeda'};color:${rep2conf?'#27500a':'#633806'};margin-bottom:2px;">${rep2conf?'✅':'⏳'} ${p.rep2}</span>`:null,
       ].filter(Boolean).join('<br>');
+      const obsCell=p.obs?`<div style="color:#854f0b;">💬 ${p.obs}</div>`:'';
+      const privObsCell=isInternal&&p.privObs?`<div style="margin-top:2px;padding:2px 5px;background:#fff8e6;border-left:2px solid #f0c040;font-size:10px;color:#7a5000;">🔒 ${p.privObs}</div>`:'';
       return `<tr style="background:${bg};">
         <td style="padding:7px 12px;font-size:11px;color:#6b6a65;white-space:nowrap;">${p.startTime||'—'}–${p.endTime||'?'}</td>
         <td style="padding:7px 12px;font-size:12px;font-weight:500;">${p.name}</td>
@@ -2105,13 +2151,14 @@ function exportPDF(cid){
         <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${p.trainees||'—'}</td>
         <td style="padding:7px 12px;font-size:11px;">${repsHtml||'—'}</td>
         <td style="padding:7px 12px;font-size:11px;"><span style="background:${ST_BG[p.status]||'#e6f1fb'};color:${ST_COLOR[p.status]||'#0c447c'};padding:2px 8px;border-radius:12px;font-weight:500;">${PSTAT[p.status]?.l||p.status}</span></td>
-        <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${p.obs||''}</td>
+        <td style="padding:7px 12px;font-size:11px;color:#6b6a65;">${obsCell}</td>
+        ${isInternal?`<td style="padding:7px 12px;font-size:11px;">${privObsCell}</td>`:''}
       </tr>`;
     }).join('')}`;
   }).join('');
 
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-  <title>Cronograma — ${c.name}</title>
+  <title>${isInternal?'[INTERNO] ':''}Cronograma — ${c.name}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:Arial,sans-serif;color:#1a1a18;background:#fff;padding:32px;}
@@ -2130,7 +2177,7 @@ function exportPDF(cid){
     <div>
       <div style="font-size:10px;letter-spacing:2px;color:#6b6a65;text-transform:uppercase;margin-bottom:6px;">JSR Sistemas · TrainControl</div>
       <h1>${c.name}</h1>
-      <div style="font-size:13px;color:#6b6a65;margin-top:4px;">Cronograma de implantação e treinamento</div>
+      <div style="font-size:13px;color:#6b6a65;margin-top:4px;">Cronograma de implantação e treinamento${isInternal?' &nbsp;<span style="background:#fff8e6;color:#7a5000;padding:2px 10px;border-radius:12px;font-size:11px;border:1px solid #f0c040;">🔒 USO INTERNO</span>':''}</div>
       <div style="font-size:11px;color:#9b9a95;margin-top:2px;">Gerado em ${today}</div>
     </div>
     <div style="text-align:right;">
@@ -2152,9 +2199,9 @@ function exportPDF(cid){
   </div>
 
   <!-- CRONOGRAMA -->
-  <h2 style="font-size:14px;font-weight:600;margin-bottom:12px;color:#1a1a18;">Cronograma detalhado</h2>
+  <h2 style="font-size:14px;font-weight:600;margin-bottom:12px;color:#1a1a18;">Cronograma detalhado${isInternal?' — <span style="color:#7a5000;font-size:12px;">🔒 Versão Interna</span>':''}</h2>
   <table>
-    <thead><tr><th style="width:90px;">Horário</th><th>Processo</th><th style="width:120px;">Departamento</th><th style="width:100px;">Responsável</th><th>Envolvidos</th><th style="width:130px;">Replicadores</th><th style="width:80px;">Status</th><th>Observações</th></tr></thead>
+    <thead><tr><th style="width:90px;">Horário</th><th>Processo</th><th style="width:120px;">Departamento</th><th style="width:100px;">Responsável</th><th>Envolvidos</th><th style="width:130px;">Replicadores</th><th style="width:80px;">Status</th><th>Observações</th>${isInternal?'<th style="background:#7a5000;">🔒 Obs. Interna</th>':''}</tr></thead>
     <tbody>${rows}</tbody>
   </table>
 
@@ -2309,7 +2356,7 @@ document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-action]');if(!t)return;
   const a=t.dataset.action;
   if(a==='logout'){await signOut(auth);}
-  else if(a==='export-pdf'){exportPDF(t.dataset.cid);}
+  else if(a==='export-pdf'){exportPDF(t.dataset.cid, t.dataset.mode||'cliente');}
   else if(a==='send-confirmations'){
     const sid=t.dataset.sid;
     const s=D.sessions[sid];
@@ -2473,11 +2520,15 @@ document.addEventListener('click',async e=>{
   // SAVE DAY
   else if(a==='save-day'){
     const cid=q('fdCid'),label=q('fdLabel'),date=q('fdDate'),modality=q('fdMod')||'presencial',notes=q('fdNotes');
+    const lunchStart=document.getElementById('fdLunchStart')?.value||'12:00';
+    const lunchEnd=document.getElementById('fdLunchEnd')?.value||'13:00';
     if(!cid||!label||!date)return alert('Preencha cliente, rótulo e data.');
-    const id=gi();await fbSet(`/sessions/${id}`,{id,clientId:cid,date,modality,label,notes,processes:{}});closeModal();
+    const id=gi();await fbSet(`/sessions/${id}`,{id,clientId:cid,date,modality,label,notes,lunchStart,lunchEnd,processes:{}});closeModal();
   }
   else if(a==='save-edit-day'){
     const sid=q('edSid'),cid=q('edCid'),label=q('edLabel'),date=q('edDate'),modality=q('edMod')||'presencial',notes=q('edNotes'),internalNotes=document.getElementById('edInternalNotes')?.value.trim()||'';
+    const lunchStart=document.getElementById('edLunchStart')?.value||'12:00';
+    const lunchEnd=document.getElementById('edLunchEnd')?.value||'13:00';
     if(!label||!date)return alert('Preencha rótulo e data.');
     const orig=D.sessions[sid]||{};
     const now=new Date().toISOString();
@@ -2485,7 +2536,7 @@ document.addEventListener('click',async e=>{
     const dayLog=[...(orig.auditLog||[])];
     if(orig.date&&orig.date!==date)
       dayLog.push({type:'data',from:orig.date,to:date,by:who,at:now});
-    await fbUpdate(`/sessions/${sid}`,{clientId:cid,label,date,modality,notes,internalNotes,auditLog:dayLog});
+    await fbUpdate(`/sessions/${sid}`,{clientId:cid,label,date,modality,notes,internalNotes,lunchStart,lunchEnd,auditLog:dayLog});
     // Se a data mudou, oferece mover os dias seguintes
     if(orig.date&&orig.date!==date){
       const diffDays=daysDiff(orig.date,date);
@@ -2518,9 +2569,9 @@ document.addEventListener('click',async e=>{
 
   // SAVE PROC
   else if(a==='save-proc'){
-    const sid=q('fpSid'),name=q('fpName'),deptId=q('fpDept'),trainerId=q('fpTr'),trainees=q('fpTr2'),startTime=document.getElementById('fpST')?.value||'09:00',endTime=document.getElementById('fpET')?.value||'11:00',obs=q('fpObs'),rep1=q('fpRep1'),rep2=q('fpRep2');
+    const sid=q('fpSid'),name=q('fpName'),deptId=q('fpDept'),trainerId=q('fpTr'),trainees=q('fpTr2'),startTime=document.getElementById('fpST')?.value||'09:00',endTime=document.getElementById('fpET')?.value||'11:00',obs=q('fpObs'),privObs=document.getElementById('fpPrivObs')?.value.trim()||'',rep1=q('fpRep1'),rep2=q('fpRep2');
     if(!sid||!name)return alert('Informe o nome do processo.');
-    const id=gi();await fbSet(`/sessions/${sid}/processes/${id}`,{id,name,deptId,trainerId,trainees,status:'pendente',obs,startTime,endTime,rep1,rep2});closeModal();
+    const id=gi();await fbSet(`/sessions/${sid}/processes/${id}`,{id,name,deptId,trainerId,trainees,status:'pendente',obs,privObs,startTime,endTime,rep1,rep2});closeModal();
   }
   else if(a==='save-edit-proc'){
     const sid=q('epSid'),pid=q('epPid'),startTime=document.getElementById('epST')?.value||'09:00',endTime=document.getElementById('epET')?.value||'11:00';
@@ -2546,7 +2597,7 @@ document.addEventListener('click',async e=>{
       return;
     }
     // Admin — todos os campos
-    const deptId=q('epDept'),trainerId=q('epTr'),trainees=q('epTr2'),obs=q('epObs'),rep1=q('epRep1'),rep2=q('epRep2');
+    const deptId=q('epDept'),trainerId=q('epTr'),trainees=q('epTr2'),obs=q('epObs'),privObs=document.getElementById('epPrivObs')?.value.trim()||'',rep1=q('epRep1'),rep2=q('epRep2');
     const catId=document.getElementById('epCatId')?.value||'';
     const name=catId&&D.catalog[catId]?D.catalog[catId].name:q('epName');
     if(!name)return alert('Selecione um processo do catálogo ou informe um nome manual.');
@@ -2558,7 +2609,7 @@ document.addEventListener('click',async e=>{
       auditLog.push({type:'departamento',from:orig.deptId,to:deptId,by:who,at:now});
     if(orig.trainerId!==trainerId)
       auditLog.push({type:'responsavel',from:orig.trainerId,to:trainerId,by:who,at:now});
-    const procData={name,deptId,trainerId,trainees,startTime,endTime,obs,rep1,rep2,catalogId:catId||null,auditLog};
+    const procData={name,deptId,trainerId,trainees,startTime,endTime,obs,privObs,rep1,rep2,catalogId:catId||null,auditLog};
     if(moveTo&&moveTo!==sid){
       const newPid=gi();
       await fbSet(`/sessions/${moveTo}/processes/${newPid}`,{...orig,...procData,id:newPid});
