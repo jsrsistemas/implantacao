@@ -614,6 +614,7 @@ function renderDashboard(){
   const today=new Date().toISOString().split('T')[0];
   const allSs=myS().sort((a,b)=>a.date.localeCompare(b.date));
   const cs=myC();
+  const isAdmin=currentProfile?.role==='admin';
   const selDashCid=S.dashCid||'';
   const selDashInst=S.dashInst||'';
   // Aplica filtros
@@ -671,11 +672,11 @@ function renderDashboard(){
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
     <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:5px;">Concluídos</div><div style="font-size:26px;font-weight:500;color:var(--green);">${done}</div><div style="font-size:11px;color:var(--text2);">de ${allP.length} processos</div></div>
     <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:5px;">Pendentes</div><div style="font-size:26px;font-weight:500;color:var(--amber);">${pend}</div></div>
-    <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:5px;">Horas realizadas</div><div style="font-size:26px;font-weight:500;">${totalH.toFixed(1)}h</div></div>
+    ${isAdmin?`<div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:5px;">Horas realizadas</div><div style="font-size:26px;font-weight:500;">${totalH.toFixed(1)}h</div></div>`:''}
     <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:5px;">Progresso geral</div><div style="font-size:26px;font-weight:500;color:${pcol(pct)};">${pct}%</div>${pb(pct)}</div>
   </div>
 
-  <div class="dash-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;">
+  <div class="dash-grid-2" style="display:grid;grid-template-columns:${isAdmin?'1fr 1fr':'1fr'};gap:14px;margin-bottom:16px;">
     <!-- PRÓXIMOS TREINAMENTOS -->
     <div class="card" style="padding:16px;">
       <h3 style="font-size:13px;font-weight:500;margin-bottom:12px;">📅 Próximos treinamentos</h3>
@@ -692,8 +693,8 @@ function renderDashboard(){
       }).join('')}
     </div>
 
-    <!-- HORAS POR INSTRUTOR -->
-    <div class="card" style="padding:16px;">
+    <!-- HORAS POR INSTRUTOR — só admin -->
+    ${isAdmin?`<div class="card" style="padding:16px;">
       <h3 style="font-size:13px;font-weight:500;margin-bottom:12px;">👤 Horas por instrutor</h3>
       ${instList.length===0?`<p style="color:var(--text2);font-size:12px;">Nenhuma hora registrada ainda.</p>`:
       instList.map(([uid,h])=>{
@@ -708,7 +709,7 @@ function renderDashboard(){
           <div style="font-size:12px;font-weight:500;color:var(--blue);min-width:36px;text-align:right;">${h.toFixed(1)}h</div>
         </div>`;
       }).join('')}
-    </div>
+    </div>`:''}
   </div>
 
   <!-- PROGRESSO SEMANAL -->
@@ -2174,10 +2175,10 @@ function exportPDF(cid, mode='cliente'){
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:Arial,sans-serif;color:#1a1a18;background:#fff;padding:32px;}
-    @media print{body{padding:0;}@page{margin:20mm 15mm;size:A4 landscape;}}
+    @media print{body{padding:0;}@page{margin:15mm 12mm;size:A4 portrait;}}
     h1{font-size:20px;font-weight:700;color:#185fa5;}
-    table{width:100%;border-collapse:collapse;font-size:12px;}
-    th{background:#185fa5;color:#fff;padding:9px 12px;text-align:left;font-size:11px;font-weight:600;}
+    table{width:100%;border-collapse:collapse;font-size:10px;}
+    th{background:#185fa5;color:#fff;padding:7px 8px;text-align:left;font-size:9px;font-weight:600;}
     td{border-bottom:1px solid #e0ddd4;}
     .sig-box{border:1px solid #c8c5ba;border-radius:8px;padding:20px 24px;margin-top:8px;}
     .sig-line{border-bottom:1px solid #1a1a18;margin:40px 0 8px;width:280px;}
@@ -2213,7 +2214,7 @@ function exportPDF(cid, mode='cliente'){
   <!-- CRONOGRAMA -->
   <h2 style="font-size:14px;font-weight:600;margin-bottom:12px;color:#1a1a18;">Cronograma detalhado${isInternal?' — <span style="color:#7a5000;font-size:12px;">🔒 Versão Interna</span>':''}</h2>
   <table>
-    <thead><tr><th style="width:90px;">Horário</th><th>Processo</th><th style="width:120px;">Departamento</th><th style="width:100px;">Responsável</th><th>Envolvidos</th><th style="width:130px;">Replicadores</th><th style="width:80px;">Status</th><th>Observações</th>${isInternal?'<th style="background:#7a5000;">🔒 Obs. Interna</th>':''}</tr></thead>
+    <thead><tr><th style="width:75px;">Horário</th><th>Processo</th><th style="width:90px;">Departamento</th><th style="width:80px;">Responsável</th><th style="width:90px;">Envolvidos</th><th style="width:100px;">Replicadores</th><th style="width:65px;">Status</th><th>Observações</th>${isInternal?'<th style="background:#7a5000;width:90px;">🔒 Obs. Interna</th>':''}</tr></thead>
     <tbody>${rows}</tbody>
   </table>
 
