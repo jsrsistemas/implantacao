@@ -458,7 +458,13 @@ const myS = () => {
   const p=currentProfile;if(!p)return[];
   const ss=Object.values(D.sessions||{});
   if(p.role==='admin')return ss;
-  if(p.role==='instrutor')return ss.filter(s=>Object.values(s.processes||{}).some(proc=>proc.trainerId===currentUser.uid));
+  if(p.role==='instrutor'){
+    // Vê sessões onde é responsável OU onde o cliente está associado ao seu perfil
+    return ss.filter(s=>
+      (p.clientIds||{})[s.clientId] ||
+      Object.values(s.processes||{}).some(proc=>proc.trainerId===currentUser.uid)
+    );
+  }
   return ss.filter(s=>(p.clientIds||{})[s.clientId]);
 };
 const myC = () => {
@@ -555,7 +561,7 @@ function renderSidebar(){
     {id:'cronograma',ic:'☰',l:'Cronograma'},
     {id:'horarios',ic:'◷',l:'Grade de horários'},
   ];
-  if(p.role==='admin'||p.role==='instrutor')nav.push({id:'catalogo',ic:'☷',l:'Catálogo'});
+  if(p.role==='admin')nav.push({id:'catalogo',ic:'☷',l:'Catálogo'});
   if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
   // Atualiza título na barra mobile
   const cur=nav.find(n=>n.id===S.view);
@@ -753,7 +759,9 @@ function renderDashboard(){
 // ── CRONOGRAMA ────────────────────────────────────────────────────────────
 function renderCronograma(){
   const p=currentProfile;
-  const isE=p?.role!=='gestor';
+  const isAdmin=p?.role==='admin';
+  const isInstrutor=p?.role==='instrutor';
+  const isE=p?.role!=='gestor'; // pode interagir (admin ou instrutor)
   const ss=myS().sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
   const cs=myC();
   const filtered=ss.filter(s=>!S.fC||s.clientId===S.fC).filter(s=>!S.fS||Object.values(s.processes||{}).some(proc=>proc.status===S.fS));
@@ -863,6 +871,14 @@ function renderCronograma(){
                   ${proc.rep2?repBadge(proc.rep2,rep2conf,rep2key):''}
                 </div>
               </div>`:''}
+              ${proc.auditLog&&proc.auditLog.length>0?`<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px;">
+                ${proc.auditLog.slice(-3).map(l=>{
+                  const labels={horario:'⏰ Horário',departamento:'🏢 Depto',responsavel:'👤 Responsável',dia:'📅 Dia'};
+                  const d=new Date(l.at);
+                  const ds=d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+                  return `<span style="font-size:10px;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:1px 7px;color:var(--text3);">${labels[l.type]||l.type} editado por <strong>${l.by}</strong> em ${ds}</span>`;
+                }).join('')}
+              </div>`:''}
             </div>
             ${isE?`<div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-left:8px;">
               ${proc.status==='pendente'?`
@@ -871,7 +887,7 @@ function renderCronograma(){
               `:''}
               ${proc.status!=='pendente'?`<button class="btn btn-sm bgr" data-action="mark" data-sid="${s.id}" data-pid="${proc.id}" data-st="pendente" title="Voltar para pendente">↩</button>`:''}
               <button class="btn btn-i btn-sm" data-action="open-modal" data-modal="edit-proc" data-sid="${s.id}" data-pid="${proc.id}" title="Editar">✎</button>
-              <button class="btn btn-d btn-sm" data-action="rm-proc" data-sid="${s.id}" data-pid="${proc.id}" title="Remover">×</button>
+              ${isAdmin?`<button class="btn btn-d btn-sm" data-action="rm-proc" data-sid="${s.id}" data-pid="${proc.id}" title="Remover">×</button>`:''}
             </div>`:''}
           </div>`;
         }).join('')}
@@ -1542,6 +1558,7 @@ function openModal(type,data={}){
     </div>`;
   } else if(type==='edit-proc'){
     const s=D.sessions[data.sid];const cl=gc(s?.clientId);const proc=s?.processes?.[data.pid];
+    const modIsAdmin=currentProfile?.role==='admin';
     const cov=cl?coverageForClient(cl.id):{};
     // Catálogo ordenado por categoria → order → nome
     const cats=Object.values(D.catalog||{}).sort((a,b)=>{
@@ -1562,6 +1579,33 @@ function openModal(type,data={}){
     });
     const currentCatId=proc?.catalogId||'';
     title='Editar processo';
+    // Instrutor: só pode mudar dia e horário
+    if(!modIsAdmin){
+      body=`<input type="hidden" id="epSid" value="${data.sid}"><input type="hidden" id="epPid" value="${data.pid}">
+      <input type="hidden" id="epCatId" value="${currentCatId}">
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="background:var(--surface2);border-radius:var(--r);padding:10px 12px;font-size:12px;color:var(--text2);">
+          ℹ️ Como instrutor, você pode alterar o <strong>horário</strong> e <strong>mover para outro dia</strong>.
+        </div>
+        <div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);">
+          <div style="font-weight:500;font-size:14px;">${proc?.name||''}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;">${cl?.depts?.[proc?.deptId]?.name||'—'} · ${gu(proc?.trainerId)?.name||'—'}</div>
+        </div>
+        <div style="display:flex;gap:10px;">
+          <div style="flex:1;"><label class="lbl">Início</label><input type="time" class="inp" id="epST" value="${proc?.startTime||'09:00'}"></div>
+          <div style="flex:1;"><label class="lbl">Fim</label><input type="time" class="inp" id="epET" value="${proc?.endTime||'11:00'}"></div>
+        </div>
+        ${otherDays.length>0?`<div style="background:#F0F7FF;border:1px solid #B8D4F0;border-radius:var(--r);padding:11px;">
+          <label class="lbl" style="color:var(--blue-t);">📅 Mover para outro dia (opcional)</label>
+          <select class="inp" id="epMoveTo" style="margin-top:2px;" onchange="showDayProcesses(this.value)">
+            <option value="">— Manter no dia atual —</option>
+            ${otherDays.map(d=>{const np=Object.keys(d.processes||{}).length;return '<option value="'+d.id+'">'+d.label+' · '+fdws(d.date)+' · '+np+' processo(s)</option>';}).join('')}
+          </select>
+          <div id="epDayPreview" style="margin-top:8px;display:none;"></div>
+        </div>`:''}
+        <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-proc">Salvar alterações</button></div>
+      </div>`;
+    } else {
     body=`<input type="hidden" id="epSid" value="${data.sid}"><input type="hidden" id="epPid" value="${data.pid}">
     <input type="hidden" id="epCatId" value="${currentCatId}">
     <div style="display:flex;flex-direction:column;gap:12px;">
@@ -1634,6 +1678,7 @@ function openModal(type,data={}){
       </div>`:''}
       <div style="display:flex;gap:9px;justify-content:flex-end;"><button class="btn" data-action="close-modal">Cancelar</button><button class="btn btn-p" data-action="save-edit-proc">Salvar alterações</button></div>
     </div>`;
+    } // end admin-only block
 
   // ── DO CATÁLOGO ──
   } else if(type==='add-proc-catalog'){
@@ -2434,14 +2479,18 @@ document.addEventListener('click',async e=>{
   else if(a==='save-edit-day'){
     const sid=q('edSid'),cid=q('edCid'),label=q('edLabel'),date=q('edDate'),modality=q('edMod')||'presencial',notes=q('edNotes'),internalNotes=document.getElementById('edInternalNotes')?.value.trim()||'';
     if(!label||!date)return alert('Preencha rótulo e data.');
-    const origDate=D.sessions[sid]?.date;
-    await fbUpdate(`/sessions/${sid}`,{clientId:cid,label,date,modality,notes,internalNotes});
+    const orig=D.sessions[sid]||{};
+    const now=new Date().toISOString();
+    const who=currentProfile?.name||currentProfile?.email||'?';
+    const dayLog=[...(orig.auditLog||[])];
+    if(orig.date&&orig.date!==date)
+      dayLog.push({type:'data',from:orig.date,to:date,by:who,at:now});
+    await fbUpdate(`/sessions/${sid}`,{clientId:cid,label,date,modality,notes,internalNotes,auditLog:dayLog});
     // Se a data mudou, oferece mover os dias seguintes
-    if(origDate&&origDate!==date){
-      const diffDays=daysDiff(origDate,date);
-      // Pega dias seguintes do mesmo cliente ordenados
+    if(orig.date&&orig.date!==date){
+      const diffDays=daysDiff(orig.date,date);
       const nextSessions=Object.values(D.sessions||{})
-        .filter(s=>s.id!==sid&&s.clientId===cid&&s.date>origDate)
+        .filter(s=>s.id!==sid&&s.clientId===cid&&s.date>orig.date)
         .sort((a,b)=>a.date.localeCompare(b.date));
       if(nextSessions.length>0){
         const move=confirm(`A data foi alterada em ${Math.abs(diffDays)} dia(s).\n\nDeseja mover os ${nextSessions.length} dias seguintes proporcionalmente?\n\nFeriados e fins de semana serão pulados automaticamente.`);
@@ -2449,11 +2498,9 @@ document.addEventListener('click',async e=>{
           const updates={};
           nextSessions.forEach(s=>{
             let newDate=s.date;
-            // Aplica a mesma diferença em dias corridos
             const baseDate=new Date(s.date+'T00:00');
             baseDate.setDate(baseDate.getDate()+diffDays);
             newDate=baseDate.toISOString().split('T')[0];
-            // Pula para próximo dia útil se cair em feriado/fim de semana
             while(!isWorkday(newDate)){
               const nd=new Date(newDate+'T00:00');
               nd.setDate(nd.getDate()+(diffDays>=0?1:-1));
@@ -2462,7 +2509,7 @@ document.addEventListener('click',async e=>{
             updates[`/sessions/${s.id}/date`]=newDate;
           });
           await fbUpdate('/',updates);
-          alert(`✅ ${nextSessions.length} dia(s) atualizados, pulando feriados e fins de semana!`);
+          alert(`✅ ${nextSessions.length} dia(s) atualizados!`);
         }
       }
     }
@@ -2476,23 +2523,49 @@ document.addEventListener('click',async e=>{
     const id=gi();await fbSet(`/sessions/${sid}/processes/${id}`,{id,name,deptId,trainerId,trainees,status:'pendente',obs,startTime,endTime,rep1,rep2});closeModal();
   }
   else if(a==='save-edit-proc'){
-    const sid=q('epSid'),pid=q('epPid'),deptId=q('epDept'),trainerId=q('epTr'),trainees=q('epTr2'),startTime=document.getElementById('epST')?.value||'09:00',endTime=document.getElementById('epET')?.value||'11:00',obs=q('epObs'),rep1=q('epRep1'),rep2=q('epRep2');
+    const sid=q('epSid'),pid=q('epPid'),startTime=document.getElementById('epST')?.value||'09:00',endTime=document.getElementById('epET')?.value||'11:00';
     const moveTo=q('epMoveTo');
-    // Nome: se vem do catálogo usa o nome do catálogo, senão usa o campo manual
+    const isInst=currentProfile?.role==='instrutor';
+    const now=new Date().toISOString();
+    const who=currentProfile?.name||currentProfile?.email||'?';
+    // Instrutor só pode mudar horário e dia
+    if(isInst){
+      const orig=D.sessions[sid]?.processes?.[pid]||{};
+      const auditLog=[...(orig.auditLog||[])];
+      if(orig.startTime!==startTime||orig.endTime!==endTime)
+        auditLog.push({type:'horario',from:`${orig.startTime}–${orig.endTime}`,to:`${startTime}–${endTime}`,by:who,at:now});
+      const procData={startTime,endTime,auditLog};
+      if(moveTo&&moveTo!==sid){
+        const newPid=gi();
+        await fbSet(`/sessions/${moveTo}/processes/${newPid}`,{...orig,...procData,id:newPid});
+        await fbRemove(`/sessions/${sid}/processes/${pid}`);
+        closeModal(); alert('✅ Processo movido com sucesso!');
+      } else {
+        await fbUpdate(`/sessions/${sid}/processes/${pid}`,procData); closeModal();
+      }
+      return;
+    }
+    // Admin — todos os campos
+    const deptId=q('epDept'),trainerId=q('epTr'),trainees=q('epTr2'),obs=q('epObs'),rep1=q('epRep1'),rep2=q('epRep2');
     const catId=document.getElementById('epCatId')?.value||'';
     const name=catId&&D.catalog[catId]?D.catalog[catId].name:q('epName');
     if(!name)return alert('Selecione um processo do catálogo ou informe um nome manual.');
-    const procData={name,deptId,trainerId,trainees,startTime,endTime,obs,rep1,rep2,catalogId:catId||null};
+    const orig=D.sessions[sid]?.processes?.[pid]||{};
+    const auditLog=[...(orig.auditLog||[])];
+    if(orig.startTime!==startTime||orig.endTime!==endTime)
+      auditLog.push({type:'horario',from:`${orig.startTime}–${orig.endTime}`,to:`${startTime}–${endTime}`,by:who,at:now});
+    if(orig.deptId!==deptId)
+      auditLog.push({type:'departamento',from:orig.deptId,to:deptId,by:who,at:now});
+    if(orig.trainerId!==trainerId)
+      auditLog.push({type:'responsavel',from:orig.trainerId,to:trainerId,by:who,at:now});
+    const procData={name,deptId,trainerId,trainees,startTime,endTime,obs,rep1,rep2,catalogId:catId||null,auditLog};
     if(moveTo&&moveTo!==sid){
-      const origProc=D.sessions[sid]?.processes?.[pid]||{};
       const newPid=gi();
-      await fbSet(`/sessions/${moveTo}/processes/${newPid}`,{...origProc,...procData,id:newPid});
+      await fbSet(`/sessions/${moveTo}/processes/${newPid}`,{...orig,...procData,id:newPid});
       await fbRemove(`/sessions/${sid}/processes/${pid}`);
-      closeModal();
-      alert('✅ Processo movido com sucesso!');
+      closeModal(); alert('✅ Processo movido com sucesso!');
     } else {
-      await fbUpdate(`/sessions/${sid}/processes/${pid}`,procData);
-      closeModal();
+      await fbUpdate(`/sessions/${sid}/processes/${pid}`,procData); closeModal();
     }
   }
 
