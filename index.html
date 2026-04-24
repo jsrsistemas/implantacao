@@ -301,6 +301,18 @@ if(IS_CONFIRM_LINK){
         processIds: pids, processCount: pids.length
       });
       if(ok){
+        // Marca os processos como "realizado" no Firebase
+        try {
+          const updates = {};
+          pids.forEach(pid => {
+            updates[`/sessions/${sid}/processes/${pid}/status`] = 'realizado';
+          });
+          await fetch(`${DB_URL}/.json`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+          });
+        } catch(e) { console.warn('Erro ao atualizar status:', e); }
         document.getElementById('conf-success-name').textContent = `${name}${role?' · '+role:''}`;
         document.getElementById('conf-success-time').textContent = now.toLocaleString('pt-BR');
         hideEl('conf-form'); showEl('conf-success');
