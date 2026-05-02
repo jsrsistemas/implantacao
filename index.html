@@ -2120,10 +2120,92 @@ function toggleSidebar(){window.toggleSidebar();}
 function closeSidebar(){window.closeSidebar();}
 
 // ── EXPORT PDF ────────────────────────────────────────────────────────────
-function exportPDF(cid, mode='cliente'){
+function openPDFSelector(cid, mode){
+  const c=gc(cid); if(!c)return;
+  const ss=myS().filter(s=>s.clientId===cid).sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
+  if(!ss.length)return alert('Nenhum dia cadastrado para este cliente.');
+
+  // Agrupa por semana
+  const firstMonday=getWeekMonday(ss[0].date);
+  const weekGroups={};
+  ss.forEach(s=>{
+    const wn=Math.floor(daysDiff(firstMonday,getWeekMonday(s.date))/7)+1;
+    if(!weekGroups[wn])weekGroups[wn]=[];
+    weekGroups[wn].push(s);
+  });
+  const weekNums=Object.keys(weekGroups).map(Number).sort((a,b)=>a-b);
+
+  const isInternal=mode==='interno';
+  const icon=isInternal?'🔒':'📄';
+  const label=isInternal?'PDF Interno':'PDF Cliente';
+
+  document.getElementById('ov').classList.add('open');
+  document.getElementById('mb').innerHTML=`
+    <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <h3 style="font-size:15px;font-weight:500;">${icon} Selecionar dias — ${label}</h3>
+      <button style="background:transparent;border:none;font-size:20px;cursor:pointer;color:var(--text2);" data-action="close-modal">×</button>
+    </div>
+    <div style="padding:18px 22px;">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">Selecione os dias que deseja incluir no PDF. Clique em uma semana para selecionar todos de uma vez.</div>
+
+      <!-- Botões rápidos -->
+      <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
+        <button class="btn btn-sm btn-p" onclick="pdfSelectAll(true)">✓ Todos</button>
+        <button class="btn btn-sm" onclick="pdfSelectAll(false)">☐ Nenhum</button>
+      </div>
+
+      <!-- Lista por semana -->
+      <div style="max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+        ${weekNums.map(wn=>{
+          const days=weekGroups[wn];
+          return `<div>
+            <div onclick="pdfSelectWeek(${wn})" style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--blue-bg);border-radius:var(--r);cursor:pointer;margin-bottom:5px;">
+              <span style="font-size:12px;font-weight:600;color:var(--blue-t);">Semana ${wn}</span>
+              <span style="font-size:10px;color:var(--blue-t);">clique para selecionar todos</span>
+            </div>
+            ${days.map(s=>{
+              const tot=Object.keys(s.processes||{}).length;
+              return `<label style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;margin-bottom:4px;">
+                <input type="checkbox" class="pdf-day-cb" data-sid="${s.id}" data-week="${wn}" checked style="accent-color:var(--blue);width:16px;height:16px;flex-shrink:0;">
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:13px;font-weight:500;">${s.label}</div>
+                  <div style="font-size:11px;color:var(--text2);">${fdws(s.date)} · ${tot} processo(s)</div>
+                </div>
+              </label>`;
+            }).join('')}
+          </div>`;
+        }).join('')}
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn" data-action="close-modal">Cancelar</button>
+        <button class="btn ${isInternal?'btn-w':'btn-p'}" onclick="runExportPDF('${cid}','${mode}')">
+          ${icon} Gerar PDF
+        </button>
+      </div>
+    </div>`;
+}
+
+window.pdfSelectAll=function(val){
+  document.querySelectorAll('.pdf-day-cb').forEach(cb=>cb.checked=val);
+};
+window.pdfSelectWeek=function(wn){
+  const cbs=[...document.querySelectorAll(`.pdf-day-cb[data-week="${wn}"]`)];
+  const allChecked=cbs.every(cb=>cb.checked);
+  cbs.forEach(cb=>cb.checked=!allChecked);
+};
+window.runExportPDF=function(cid,mode){
+  const selectedSids=[...document.querySelectorAll('.pdf-day-cb:checked')].map(cb=>cb.dataset.sid);
+  if(!selectedSids.length)return alert('Selecione ao menos um dia.');
+  document.getElementById('ov').classList.remove('open');
+  exportPDF(cid, mode, selectedSids);
+};
+
+function exportPDF(cid, mode='cliente', filterSids=null){
   const c=gc(cid);if(!c)return;
   const isInternal=mode==='interno';
-  const ss=myS().filter(s=>s.clientId===cid).sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
+  const allSs=myS().filter(s=>s.clientId===cid).sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
+  const ss=filterSids?allSs.filter(s=>filterSids.includes(s.id)):allSs;
   const allP=ss.flatMap(s=>Object.values(s.processes||{}));
   const done=allP.filter(p=>p.status==='realizado'||p.status==='video').length;
   const pct=allP.length>0?Math.round(done/allP.length*100):0;
@@ -2369,7 +2451,7 @@ document.addEventListener('click',async e=>{
   const t=e.target.closest('[data-action]');if(!t)return;
   const a=t.dataset.action;
   if(a==='logout'){await signOut(auth);}
-  else if(a==='export-pdf'){exportPDF(t.dataset.cid, t.dataset.mode||'cliente');}
+  else if(a==='export-pdf'){openPDFSelector(t.dataset.cid, t.dataset.mode||'cliente');}
   else if(a==='send-confirmations'){
     const sid=t.dataset.sid;
     const s=D.sessions[sid];
