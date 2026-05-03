@@ -873,7 +873,7 @@ function renderCronograma(){
           <button class="btn btn-sm" style="background:var(--green-bg);color:var(--green-t);border:1px solid var(--green-t);font-weight:500;" data-action="send-confirmations" data-sid="${s.id}" title="Gerar links por replicador">🔗 Enviar confirmações</button>
         </div>`:''}
         ${procs.length===0?`<p style="color:var(--text2);font-size:13px;padding:16px;">Nenhum processo. Adicione pelo catálogo ou manualmente.</p>`:''}
-        ${isE&&procs.length>0?`<div id="batch-bar-${s.id}" style="display:none;padding:8px 14px;background:var(--blue-bg);border-bottom:1px solid #D6E8F7;display:none;align-items:center;gap:8px;flex-wrap:wrap;">
+        ${isE&&procs.length>0?`<div id="batch-bar-${s.id}" style="display:none;padding:8px 14px;background:var(--blue-bg);border-bottom:1px solid #D6E8F7;align-items:center;gap:8px;flex-wrap:wrap;">
           <span id="batch-count-${s.id}" style="font-size:12px;color:var(--blue-t);font-weight:500;">0 selecionados</span>
           <button class="btn btn-sm btn-p" onclick="openBatchEdit('${s.id}')">✎ Editar selecionados</button>
           <button class="btn btn-sm" onclick="clearBatchSel('${s.id}')">× Limpar seleção</button>
@@ -2025,6 +2025,9 @@ window.clearBatchSel=function(sid){
 window.openBatchEdit=function(sid){
   const pids=[...document.querySelectorAll(`.proc-cb[data-sid="${sid}"]:checked`)].map(cb=>cb.dataset.pid);
   if(!pids.length)return;
+  // Armazena pids em variável global para evitar problemas com aspas no onclick
+  window._batchPids=pids;
+  window._batchSid=sid;
   const s=D.sessions[sid]; const cl=D.clients[s?.clientId];
   const otherDays=Object.values(D.sessions||{})
     .filter(ss=>ss.clientId===s?.clientId&&ss.id!==sid)
@@ -2055,13 +2058,15 @@ window.openBatchEdit=function(sid){
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
           <button class="btn" onclick="document.getElementById('ov').classList.remove('open')">Cancelar</button>
-          <button class="btn btn-p" onclick="applyBatchEdit('${sid}',${JSON.stringify(pids)})">Aplicar nos ${pids.length} processos</button>
+          <button class="btn btn-p" onclick="applyBatchEdit()">Aplicar nos ${pids.length} processos</button>
         </div>
       </div>
     </div>`;
 };
-window.applyBatchEdit=async function(sid,pids){
-  const stVal=document.getElementById('batchST')?.value;
+window.applyBatchEdit=async function(){
+  const sid=window._batchSid;
+  const pids=window._batchPids||[];
+  if(!sid||!pids.length)return;
   const etVal=document.getElementById('batchET')?.value;
   const deptVal=document.getElementById('batchDept')?.value;
   const moveTo=document.getElementById('batchMoveTo')?.value;
