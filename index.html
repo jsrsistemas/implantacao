@@ -123,6 +123,7 @@ input,select,textarea{font-family:inherit;}
 <div id="login-screen">
   <div id="login-box">
     <div style="font-size:9px;letter-spacing:2.5px;color:var(--text2);text-transform:uppercase;margin-bottom:8px;">TrainControl · JSR Sistemas</div>
+    <div style="font-size:9px;color:var(--text3);margin-bottom:2px;">v2.5 · Mai 2026</div>
     <h1 style="font-size:24px;font-weight:500;margin-bottom:4px;">Bem-vindo</h1>
     <p style="font-size:13px;color:var(--text2);margin-bottom:28px;">Faça login para acessar o painel</p>
     <div id="login-err"></div>
@@ -895,8 +896,11 @@ function renderCronograma(){
             }
             return `<span style="font-size:11px;display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;border:1px solid var(--border2);background:var(--surface2);">⏳ <strong>${name}</strong></span>`;
           };
-          return `<div class="proc-row" draggable="${isE?'true':'false'}" data-pid="${proc.id}" style="border-left:4px solid ${deptColor};">
-            ${isE?`<input type="checkbox" class="proc-cb" data-sid="${s.id}" data-pid="${proc.id}" onchange="updateBatchBar('${s.id}')" style="accent-color:var(--blue);width:15px;height:15px;flex-shrink:0;cursor:pointer;">`:''}
+          return `<div class="proc-row" draggable="false" data-pid="${proc.id}" style="border-left:4px solid ${deptColor};">
+            ${isE?`<input type="checkbox" class="proc-cb" data-sid="${s.id}" data-pid="${proc.id}"
+              onclick="event.stopPropagation()"
+              onchange="updateBatchBar('${s.id}')"
+              style="accent-color:var(--blue);width:16px;height:16px;flex-shrink:0;cursor:pointer;margin-right:2px;">`:''}
             ${isE?`<div class="drag-handle" title="Arrastar para reordenar">⠿</div>`:''}
             <div style="flex:1;min-width:0;">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -2439,11 +2443,12 @@ function initDragDrop(){
     if(!sid)return;
     let dragging=null;
 
-    container.querySelectorAll('.proc-row[draggable="true"]').forEach(row=>{
-      // Inicia drag apenas pelo handle
+    container.querySelectorAll('.proc-row').forEach(row=>{
+      // Drag só inicia pelo handle
       const handle=row.querySelector('.drag-handle');
       if(handle){
         handle.addEventListener('mousedown',()=>{ row.setAttribute('draggable','true'); });
+        handle.addEventListener('mouseup',()=>{ row.setAttribute('draggable','false'); });
       }
 
       row.addEventListener('dragstart',e=>{
