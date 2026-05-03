@@ -2071,6 +2071,7 @@ window.applyBatchEdit=async function(){
   const sid=window._batchSid;
   const pids=window._batchPids||[];
   if(!sid||!pids.length)return;
+  const stVal=document.getElementById('batchST')?.value;
   const etVal=document.getElementById('batchET')?.value;
   const deptVal=document.getElementById('batchDept')?.value;
   const moveTo=document.getElementById('batchMoveTo')?.value;
