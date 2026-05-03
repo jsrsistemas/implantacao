@@ -658,16 +658,22 @@ function renderDashboard(){
 
   <!-- FILTROS -->
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-    <select class="inp" style="width:auto;font-size:12px;" data-action="dashCid">
-      <option value="">Todos os clientes</option>
+    <select class="inp" style="width:auto;font-size:13px;font-weight:500;" data-action="dashCid">
+      <option value="">⚠️ Selecione um cliente...</option>
       ${cs.map(c=>`<option value="${c.id}"${selDashCid===c.id?' selected':''}>${c.name}</option>`).join('')}
     </select>
-    <select class="inp" style="width:auto;font-size:12px;" data-action="dashInst">
+    ${selDashCid?`<select class="inp" style="width:auto;font-size:12px;" data-action="dashInst">
       <option value="">Todos os instrutores</option>
       ${allUsers.map(u=>`<option value="${u.uid}"${selDashInst===u.uid?' selected':''}>${u.name||u.email}</option>`).join('')}
-    </select>
+    </select>`:''}
   </div>
+  ${!selDashCid?`<div class="card" style="padding:40px;text-align:center;color:var(--text2);">
+    <div style="font-size:32px;margin-bottom:12px;">👆</div>
+    <div style="font-size:15px;font-weight:500;margin-bottom:6px;">Selecione um cliente para ver o dashboard</div>
+    <div style="font-size:12px;">Use o seletor acima para escolher a implantação.</div>
+  </div>`:''}
 
+  ${selDashCid?`
   <!-- STATS -->
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
     <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:5px;">Concluídos</div><div style="font-size:26px;font-weight:500;color:var(--green);">${done}</div><div style="font-size:11px;color:var(--text2);">de ${allP.length} processos</div></div>
@@ -775,8 +781,9 @@ function renderDashboard(){
           </div></div>
         </div>`;
       }).join('')}
-    </div>`;
-  }).join('')}`;
+    </div>`
+  }).join('')}
+  `:''}` ;
 }
 
 // ── CRONOGRAMA ────────────────────────────────────────────────────────────
@@ -795,16 +802,21 @@ function renderCronograma(){
       ${isE?`<button class="btn btn-p" data-action="open-modal" data-modal="add-day">+ Novo dia</button>`:''}
     </div>
   </div>
-  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-    <select class="inp" style="width:auto;font-size:12px;" data-action="fC">
-      <option value="">Todos os clientes</option>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+    <select class="inp" style="width:auto;font-size:13px;font-weight:500;" data-action="fC">
+      <option value="">⚠️ Selecione um cliente...</option>
       ${cs.map(c=>`<option value="${c.id}"${S.fC===c.id?' selected':''}>${c.name}</option>`).join('')}
     </select>
-    <select class="inp" style="width:auto;font-size:12px;" data-action="fS">
+    ${S.fC?`<select class="inp" style="width:auto;font-size:12px;" data-action="fS">
       <option value="">Todos os status</option>
       ${Object.entries(PSTAT).map(([k,v])=>`<option value="${k}"${S.fS===k?' selected':''}>${v.l}</option>`).join('')}
-    </select>
+    </select>`:''}
   </div>
+  ${!S.fC?`<div class="card" style="padding:40px;text-align:center;color:var(--text2);">
+    <div style="font-size:32px;margin-bottom:12px;">👆</div>
+    <div style="font-size:15px;font-weight:500;margin-bottom:6px;">Selecione um cliente para ver o cronograma</div>
+    <div style="font-size:12px;">Use o seletor acima para escolher a implantação que deseja visualizar.</div>
+  </div>`:''}
   ${filtered.length===0?('<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum dia encontrado.'+(isE?'<br><button class="btn btn-p" style="margin-top:12px;" data-action="open-modal" data-modal="add-day">+ Criar primeiro dia</button>':'')+'</div>'):''}
   ${(()=>{
     // Calcula semanas relativas ao primeiro dia da implantação
@@ -861,9 +873,15 @@ function renderCronograma(){
           <button class="btn btn-sm" style="background:var(--green-bg);color:var(--green-t);border:1px solid var(--green-t);font-weight:500;" data-action="send-confirmations" data-sid="${s.id}" title="Gerar links por replicador">🔗 Enviar confirmações</button>
         </div>`:''}
         ${procs.length===0?`<p style="color:var(--text2);font-size:13px;padding:16px;">Nenhum processo. Adicione pelo catálogo ou manualmente.</p>`:''}
+        ${isE&&procs.length>0?`<div id="batch-bar-${s.id}" style="display:none;padding:8px 14px;background:var(--blue-bg);border-bottom:1px solid #D6E8F7;display:none;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span id="batch-count-${s.id}" style="font-size:12px;color:var(--blue-t);font-weight:500;">0 selecionados</span>
+          <button class="btn btn-sm btn-p" onclick="openBatchEdit('${s.id}')">✎ Editar selecionados</button>
+          <button class="btn btn-sm" onclick="clearBatchSel('${s.id}')">× Limpar seleção</button>
+        </div>`:''}
         <div class="proc-list" data-drag-sid="${s.id}">
         ${procs.map((proc,pi)=>{
           const tr=gu(proc.trainerId);const dept=c?.depts?.[proc.deptId];
+          const deptColor=dept?avc(dept.name):'transparent';
           // Confirmações de replicadores para esta sessão
           const repConfs=D.repconfirmations?.[s.id]||{};
           const rep1confEntry=proc.rep1?Object.entries(repConfs).find(([k,rc])=>rc.repName===proc.rep1&&rc.processIds?.includes(proc.id)):null;
@@ -877,7 +895,8 @@ function renderCronograma(){
             }
             return `<span style="font-size:11px;display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;border:1px solid var(--border2);background:var(--surface2);">⏳ <strong>${name}</strong></span>`;
           };
-          return `<div class="proc-row" draggable="${isE?'true':'false'}" data-pid="${proc.id}">
+          return `<div class="proc-row" draggable="${isE?'true':'false'}" data-pid="${proc.id}" style="border-left:4px solid ${deptColor};">
+            ${isE?`<input type="checkbox" class="proc-cb" data-sid="${s.id}" data-pid="${proc.id}" onchange="updateBatchBar('${s.id}')" style="accent-color:var(--blue);width:15px;height:15px;flex-shrink:0;cursor:pointer;">`:''}
             ${isE?`<div class="drag-handle" title="Arrastar para reordenar">⠿</div>`:''}
             <div style="flex:1;min-width:0;">
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -1990,6 +2009,88 @@ function openModal(type,data={}){
   document.getElementById('ov').classList.add('open');
 }
 function closeModal(){document.getElementById('ov').classList.remove('open');document.getElementById('mb').innerHTML='';}
+window.updateBatchBar=function(sid){
+  const cbs=[...document.querySelectorAll(`.proc-cb[data-sid="${sid}"]`)];
+  const selected=cbs.filter(cb=>cb.checked);
+  const bar=document.getElementById(`batch-bar-${sid}`);
+  const count=document.getElementById(`batch-count-${sid}`);
+  if(bar){ bar.style.display=selected.length>0?'flex':'none'; }
+  if(count){ count.textContent=`${selected.length} processo(s) selecionado(s)`; }
+};
+window.clearBatchSel=function(sid){
+  document.querySelectorAll(`.proc-cb[data-sid="${sid}"]`).forEach(cb=>cb.checked=false);
+  const bar=document.getElementById(`batch-bar-${sid}`);
+  if(bar) bar.style.display='none';
+};
+window.openBatchEdit=function(sid){
+  const pids=[...document.querySelectorAll(`.proc-cb[data-sid="${sid}"]:checked`)].map(cb=>cb.dataset.pid);
+  if(!pids.length)return;
+  const s=D.sessions[sid]; const cl=D.clients[s?.clientId];
+  const otherDays=Object.values(D.sessions||{})
+    .filter(ss=>ss.clientId===s?.clientId&&ss.id!==sid)
+    .sort((a,b)=>(a.order??999)-(b.order??999)||a.date.localeCompare(b.date));
+  document.getElementById('ov').classList.add('open');
+  document.getElementById('mb').innerHTML=`
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <h3 style="font-size:15px;font-weight:500;">✎ Editar ${pids.length} processo(s)</h3>
+      <button style="background:transparent;border:none;font-size:20px;cursor:pointer;" onclick="document.getElementById('ov').classList.remove('open')">×</button>
+    </div>
+    <div style="padding:16px 20px;">
+      <div style="font-size:12px;color:var(--text2);background:var(--surface2);border-radius:var(--r);padding:8px 12px;margin-bottom:14px;">
+        Deixe em branco os campos que não quer alterar. Somente os campos preenchidos serão aplicados.
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;gap:10px;">
+          <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Início</label><input type="time" class="inp" id="batchST"></div>
+          <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Fim</label><input type="time" class="inp" id="batchET"></div>
+        </div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Departamento</label>
+          <select class="inp" id="batchDept"><option value="">— Não alterar —</option>${Object.values(cl?.depts||{}).map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}</select>
+        </div>
+        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Mover para outro dia</label>
+          <select class="inp" id="batchMoveTo">
+            <option value="">— Manter no dia atual —</option>
+            ${otherDays.map(d=>`<option value="${d.id}">${d.label} · ${fdws(d.date)} · ${Object.keys(d.processes||{}).length} processo(s)</option>`).join('')}
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
+          <button class="btn" onclick="document.getElementById('ov').classList.remove('open')">Cancelar</button>
+          <button class="btn btn-p" onclick="applyBatchEdit('${sid}',${JSON.stringify(pids)})">Aplicar nos ${pids.length} processos</button>
+        </div>
+      </div>
+    </div>`;
+};
+window.applyBatchEdit=async function(sid,pids){
+  const stVal=document.getElementById('batchST')?.value;
+  const etVal=document.getElementById('batchET')?.value;
+  const deptVal=document.getElementById('batchDept')?.value;
+  const moveTo=document.getElementById('batchMoveTo')?.value;
+  const updates={};
+  const moves=[];
+  for(const pid of pids){
+    const proc=D.sessions[sid]?.processes?.[pid]; if(!proc) continue;
+    if(moveTo&&moveTo!==sid){
+      moves.push({pid,proc});
+    } else {
+      if(stVal) updates[`/sessions/${sid}/processes/${pid}/startTime`]=stVal;
+      if(etVal) updates[`/sessions/${sid}/processes/${pid}/endTime`]=etVal;
+      if(deptVal) updates[`/sessions/${sid}/processes/${pid}/deptId`]=deptVal;
+    }
+  }
+  if(Object.keys(updates).length) await fbUpdate('/',updates);
+  for(const {pid,proc} of moves){
+    const newPid=gi();
+    const updated={...proc,id:newPid};
+    if(stVal) updated.startTime=stVal;
+    if(etVal) updated.endTime=etVal;
+    if(deptVal) updated.deptId=deptVal;
+    await fbSet(`/sessions/${moveTo}/processes/${newPid}`,updated);
+    await fbRemove(`/sessions/${sid}/processes/${pid}`);
+  }
+  document.getElementById('ov').classList.remove('open');
+  clearBatchSel(sid);
+  if(pids.length) alert(`✅ ${pids.length} processo(s) ${moveTo?'movidos':'atualizados'} com sucesso!`);
+};
 window.toggleSidebar=function(){const sb=document.getElementById('sidebar');const ov=document.getElementById('mob-overlay');sb.classList.toggle('open');ov.classList.toggle('open');}
 window.closeSidebar=function(){document.getElementById('sidebar').classList.remove('open');document.getElementById('mob-overlay').classList.remove('open');}
 window.confirmRmClient=async function(cid,cname){
