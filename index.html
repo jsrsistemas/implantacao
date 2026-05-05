@@ -8,6 +8,7 @@
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--bg:#f5f4f0;--surface:#fff;--surface2:#f0efe9;--border:#e0ddd4;--border2:#c8c5ba;--text:#1a1a18;--text2:#6b6a65;--text3:#9b9a95;--blue:#185fa5;--blue-bg:#e6f1fb;--blue-t:#0c447c;--green:#3b6d11;--green-bg:#eaf3de;--green-t:#27500a;--amber:#854f0b;--amber-bg:#faeeda;--amber-t:#633806;--red:#a32d2d;--red-bg:#fcebeb;--red-t:#791f1f;--gray-t:#444441;--gray-bg:#f1efe8;--r:8px;--rl:12px;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+body::before{content:'🔴 VERSÃO 3.0 - ATUALIZADO';position:fixed;top:0;left:0;right:0;background:red;color:#fff;font-size:14px;font-weight:bold;text-align:center;padding:5px;z-index:9999;font-family:monospace;}
 button{cursor:pointer;font-family:inherit;}
 input,select,textarea{font-family:inherit;}
 ::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
@@ -593,7 +594,7 @@ function renderSidebar(){
   if(mobUser)mobUser.textContent=(p.name||p.email).split(' ')[0];
   document.getElementById('sidebar').innerHTML=`
     <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-      <div><div style="font-size:9px;letter-spacing:2.5px;color:var(--text2);text-transform:uppercase;margin-bottom:2px;">TrainControl</div><div style="font-size:11px;color:var(--text3);">JSR Sistemas</div></div>
+      <div><div style="font-size:9px;letter-spacing:2.5px;color:var(--text2);text-transform:uppercase;margin-bottom:2px;">TrainControl</div><div style="font-size:11px;color:var(--text3);">JSR Sistemas</div><div style="font-size:9px;color:var(--text3);margin-top:2px;">v2.5 · Mai 2026</div></div>
       <button onclick="closeSidebar()" style="background:transparent;border:none;font-size:18px;color:var(--text2);cursor:pointer;display:none;" id="sb-close-btn">✕</button>
     </div>
     <nav style="flex:1;padding:8px 7px;">
@@ -2051,8 +2052,12 @@ window.openBatchEdit=function(sid){
           <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Início</label><input type="time" class="inp" id="batchST"></div>
           <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Fim</label><input type="time" class="inp" id="batchET"></div>
         </div>
-        <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Departamento</label>
+        <div style="display:flex;gap:10px;">
+        <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Departamento</label>
           <select class="inp" id="batchDept"><option value="">— Não alterar —</option>${Object.values(cl?.depts||{}).map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}</select>
+        </div>
+        <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Responsável</label>
+          <select class="inp" id="batchTrainer"><option value="">— Não alterar —</option>${tOpts('')}</select>
         </div>
         <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Mover para outro dia</label>
           <select class="inp" id="batchMoveTo">
@@ -2074,6 +2079,7 @@ window.applyBatchEdit=async function(){
   const stVal=document.getElementById('batchST')?.value;
   const etVal=document.getElementById('batchET')?.value;
   const deptVal=document.getElementById('batchDept')?.value;
+  const trainerVal=document.getElementById('batchTrainer')?.value;
   const moveTo=document.getElementById('batchMoveTo')?.value;
   const updates={};
   const moves=[];
@@ -2085,6 +2091,7 @@ window.applyBatchEdit=async function(){
       if(stVal) updates[`/sessions/${sid}/processes/${pid}/startTime`]=stVal;
       if(etVal) updates[`/sessions/${sid}/processes/${pid}/endTime`]=etVal;
       if(deptVal) updates[`/sessions/${sid}/processes/${pid}/deptId`]=deptVal;
+      if(trainerVal) updates[`/sessions/${sid}/processes/${pid}/trainerId`]=trainerVal;
     }
   }
   if(Object.keys(updates).length) await fbUpdate('/',updates);
@@ -2094,6 +2101,7 @@ window.applyBatchEdit=async function(){
     if(stVal) updated.startTime=stVal;
     if(etVal) updated.endTime=etVal;
     if(deptVal) updated.deptId=deptVal;
+    if(trainerVal) updated.trainerId=trainerVal;
     await fbSet(`/sessions/${moveTo}/processes/${newPid}`,updated);
     await fbRemove(`/sessions/${sid}/processes/${pid}`);
   }
