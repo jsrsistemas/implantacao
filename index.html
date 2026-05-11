@@ -1761,86 +1761,104 @@ function openModal(type,data={}){
   } else if(type==='add-proc-catalog'){
     const s=D.sessions[data.sid];const cl=gc(s?.clientId);
     const cov=cl?coverageForClient(cl.id):{};
-    // Ordena por categoria → order → nome (igual ao catálogo)
     const cats=Object.values(D.catalog||{}).sort((a,b)=>{
       const ca=a.category||'Geral'; const cb=b.category||'Geral';
       return ca.localeCompare(cb)||(a.order??999)-(b.order??999)||a.name.localeCompare(b.name);
     });
+    const grps={};
+    cats.forEach(cat=>{const g=cat.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(cat);});
+    const gNames=Object.keys(grps).sort((a,b)=>{
+      const minA=Math.min(...grps[a].map(c=>c.order??999));
+      const minB=Math.min(...grps[b].map(c=>c.order??999));
+      return minA-minB||a.localeCompare(b);
+    });
+    // Processos já no dia
+    const dayProcs=Object.values(s?.processes||{}).sort((a,b)=>(a.order??999)-(b.order??999));
     title='Adicionar processos do catálogo';
+    // Modal largo
+    document.getElementById('mb').style.maxWidth='900px';
     body=`<input type="hidden" id="acSid" value="${data.sid}">
-    <div style="display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;gap:0;height:520px;">
 
-      <!-- LISTA MULTI-SELEÇÃO -->
-      <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
-          <label class="lbl" style="margin:0;">Selecione um ou mais processos</label>
-          <div style="display:flex;gap:4px;flex-wrap:wrap;">
-            <span style="font-size:10px;padding:2px 7px;background:var(--surface2);border-radius:20px;">⬜ Não iniciado</span>
-            <span style="font-size:10px;padding:2px 7px;background:var(--amber-bg);border-radius:20px;">🟡 Agendado</span>
-            <span style="font-size:10px;padding:2px 7px;background:var(--green-bg);border-radius:20px;">✅ Concluído</span>
+      <!-- COLUNA ESQUERDA: Catálogo -->
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--border);">
+        <div style="padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface2);">
+          <div style="font-size:12px;font-weight:500;margin-bottom:6px;">📂 Catálogo — selecione o que dar hoje</div>
+          <input class="inp" id="acSearch" placeholder="🔍 Buscar processo..." style="font-size:12px;" oninput="filterCatalogList(this.value)">
+          <div style="display:flex;gap:4px;margin-top:5px;flex-wrap:wrap;">
+            <span style="font-size:10px;padding:1px 6px;background:var(--surface);border-radius:20px;border:1px solid var(--border);">⬜ Não iniciado</span>
+            <span style="font-size:10px;padding:1px 6px;background:var(--amber-bg);border-radius:20px;">🟡 Agendado</span>
+            <span style="font-size:10px;padding:1px 6px;background:var(--green-bg);border-radius:20px;">✅ Concluído</span>
           </div>
         </div>
-        <input class="inp" id="acSearch" placeholder="🔍 Buscar processo..." style="margin-bottom:8px;" oninput="filterCatalogList(this.value)">
-        <div id="acList" style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r);">
-          ${(()=>{
-            const grps={};
-            cats.forEach(cat=>{const g=cat.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(cat);});
-            // Ordena categorias pelo menor order dos seus itens (mantém mesma ordem do catálogo)
-            const gNames=Object.keys(grps).sort((a,b)=>{
-              const minA=Math.min(...grps[a].map(c=>c.order??999));
-              const minB=Math.min(...grps[b].map(c=>c.order??999));
-              return minA-minB||a.localeCompare(b);
-            });
-            return gNames.map(g=>{
-              const header=`<div class="cat-group-header" onclick="selectAllInGroup(this)" style="padding:6px 12px;background:var(--blue-bg);font-size:10px;font-weight:600;color:var(--blue-t);letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);position:sticky;top:0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-                <span>📂 ${g}</span>
-                <span style="font-size:9px;font-weight:400;opacity:.7;">clique para selecionar todos</span>
+        <div id="acList" style="flex:1;overflow-y:auto;">
+          ${gNames.map(g=>{
+            const header=`<div class="cat-group-header" onclick="selectAllInGroup(this)" style="padding:5px 12px;background:var(--blue-bg);font-size:10px;font-weight:600;color:var(--blue-t);letter-spacing:.5px;text-transform:uppercase;border-bottom:1px solid var(--border);position:sticky;top:0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;z-index:1;">
+              <span>📂 ${g}</span><span style="font-size:9px;opacity:.7;">selecionar todos</span>
+            </div>`;
+            const rows=grps[g].map(cat=>{
+              const status=covStatus(cov,cat);
+              const bg=status==='concluido'?'var(--green-bg)':status==='agendado'?'var(--amber-bg)':'var(--surface)';
+              const icon=status==='concluido'?'✅':status==='agendado'?'🟡':'⬜';
+              const label=status==='concluido'?' Concluído':status==='agendado'?' Agendado':'';
+              const labelColor=status==='concluido'?'color:var(--green-t)':status==='agendado'?'color:var(--amber-t)':'color:var(--text3)';
+              return `<div class="cat-item" data-id="${cat.id}" data-name="${esc(cat.name)}" data-cat="${esc(g)}" onclick="toggleCatalogItem(this)"
+                style="display:flex;align-items:center;gap:8px;padding:7px 12px 7px 18px;background:${bg};border-bottom:1px solid var(--border);cursor:pointer;">
+                <div style="width:16px;height:16px;border:2px solid var(--border2);border-radius:3px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;" class="cat-check"></div>
+                <span style="font-size:13px;flex-shrink:0;">${icon}</span>
+                <span style="flex:1;font-size:12px;">${cat.name}</span>
+                <span style="font-size:10px;${labelColor}">${label}</span>
               </div>`;
-              const rows=grps[g].map(cat=>{
-                const status=covStatus(cov,cat);
-                const bg=status==='concluido'?'var(--green-bg)':status==='agendado'?'var(--amber-bg)':'var(--surface)';
-                const icon=status==='concluido'?'✅':status==='agendado'?'🟡':'⬜';
-                const label=status==='concluido'?' · Concluído':status==='agendado'?' · Agendado':'';
-                const labelColor=status==='concluido'?'color:var(--green-t)':status==='agendado'?'color:var(--amber-t)':'';
-                return `<div class="cat-item" data-id="${cat.id}" data-name="${esc(cat.name)}" data-cat="${esc(g)}" onclick="toggleCatalogItem(this)"
-                  style="display:flex;align-items:center;gap:10px;padding:9px 12px 9px 20px;background:${bg};border-bottom:1px solid var(--border);cursor:pointer;">
-                  <div style="width:18px;height:18px;border:2px solid var(--border2);border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;" class="cat-check"></div>
-                  <span style="font-size:15px;flex-shrink:0;">${icon}</span>
-                  <span style="flex:1;font-size:13px;">${cat.name}</span>
-                  <span style="font-size:10px;${labelColor}">${label}</span>
-                </div>`;
-              }).join('');
-              return header+rows;
             }).join('');
-          })()}
+            return header+rows;
+          }).join('')}
         </div>
-        <!-- Contador de selecionados -->
-        <div id="acSelectedCount" style="margin-top:6px;font-size:12px;color:var(--blue-t);font-weight:500;min-height:18px;"></div>
+        <div style="padding:8px 12px;border-top:1px solid var(--border);background:var(--surface2);">
+          <div id="acSelectedCount" style="font-size:12px;color:var(--blue-t);font-weight:500;min-height:18px;"></div>
+        </div>
       </div>
 
-      <!-- INFORMAÇÕES COMPARTILHADAS -->
-      <div style="background:var(--surface2);border-radius:var(--r);padding:12px;">
-        <div style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:10px;">Informações aplicadas a todos os processos selecionados</div>
-        <div style="display:flex;gap:10px;margin-bottom:10px;">
-          <div style="flex:1;"><label class="lbl">Departamento</label><select class="inp" id="acDept"><option value="">Selecione...</option>${dOpts(cl,'')}</select></div>
-          <div style="flex:1;"><label class="lbl">Responsável</label><select class="inp" id="acTr"><option value="">Selecione...</option>${tOpts('')}</select></div>
+      <!-- COLUNA DIREITA: Já no dia + configurações -->
+      <div style="width:280px;flex-shrink:0;display:flex;flex-direction:column;">
+        <!-- Processos já no dia -->
+        <div style="padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface2);">
+          <div style="font-size:12px;font-weight:500;">📋 Já neste dia (${dayProcs.length})</div>
         </div>
-        <div style="display:flex;gap:10px;margin-bottom:10px;">
-          <div style="flex:1;"><label class="lbl">Início</label><input type="time" class="inp" id="acST" value="09:00"></div>
-          <div style="flex:1;"><label class="lbl">Fim</label><input type="time" class="inp" id="acET" value="11:00"></div>
+        <div style="flex:1;overflow-y:auto;background:var(--bg);">
+          ${dayProcs.length===0?`<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px;">Nenhum processo ainda</div>`:''}
+          ${dayProcs.map(p=>{
+            const icon=p.status==='realizado'||p.status==='video'?'✅':p.status==='cancelado'?'❌':'⏳';
+            const dept=cl?.depts?.[p.deptId];
+            return `<div style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:6px;">
+              <span>${icon}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</div>
+                ${dept?`<div style="font-size:10px;color:var(--text3);">${dept.name}</div>`:''}
+              </div>
+            </div>`;
+          }).join('')}
         </div>
-        <div style="margin-bottom:10px;"><label class="lbl">Envolvidos no treinamento</label><input class="inp" id="acTr2" placeholder="Ex: Natasha, Érica, Rafael"></div>
-        <div style="background:var(--blue-bg);border-radius:var(--r);padding:10px;">
-          <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores</div>
-          <div style="display:flex;gap:10px;">
-            ${repField('acRep1','Replicador 1',cl,'')}
-            ${repField('acRep2','Replicador 2 (opcional)',cl,'')}
+        <!-- Configurações -->
+        <div style="padding:10px 12px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px;background:var(--surface);">
+          <div style="font-size:11px;font-weight:500;color:var(--text2);">Aplicar nos selecionados:</div>
+          <div style="display:flex;gap:6px;">
+            <div style="flex:1;"><label style="font-size:10px;color:var(--text2);">Depto</label><select class="inp" id="acDept" style="font-size:11px;padding:5px 8px;"><option value="">—</option>${dOpts(cl,'')}</select></div>
+            <div style="flex:1;"><label style="font-size:10px;color:var(--text2);">Responsável</label><select class="inp" id="acTr" style="font-size:11px;padding:5px 8px;"><option value="">—</option>${tOpts('')}</select></div>
           </div>
+          <div style="display:flex;gap:6px;">
+            <div style="flex:1;"><label style="font-size:10px;color:var(--text2);">Início</label><input type="time" class="inp" id="acST" value="09:00" style="font-size:11px;padding:5px 8px;"></div>
+            <div style="flex:1;"><label style="font-size:10px;color:var(--text2);">Fim</label><input type="time" class="inp" id="acET" value="11:00" style="font-size:11px;padding:5px 8px;"></div>
+          </div>
+          <div><label style="font-size:10px;color:var(--text2);">Envolvidos</label><input class="inp" id="acTr2" placeholder="Ex: Natasha, Érica" style="font-size:11px;padding:5px 8px;"></div>
+          <div style="background:var(--blue-bg);border-radius:var(--r);padding:8px;">
+            <div style="font-size:10px;font-weight:500;color:var(--blue-t);margin-bottom:5px;">Replicadores</div>
+            <div style="display:flex;gap:6px;">
+              ${repField('acRep1','Rep. 1',cl,'')}
+              ${repField('acRep2','Rep. 2',cl,'')}
+            </div>
+          </div>
+          <button class="btn btn-p" data-action="save-proc-catalog" style="width:100%;font-size:12px;">+ Adicionar selecionados</button>
         </div>
-      </div>
-      <div style="display:flex;gap:9px;justify-content:flex-end;">
-        <button class="btn" data-action="close-modal">Cancelar</button>
-        <button class="btn btn-p" data-action="save-proc-catalog">+ Adicionar selecionados</button>
       </div>
     </div>`;
 
@@ -2005,12 +2023,14 @@ function openModal(type,data={}){
     </div>`;
   }
 
-  document.getElementById('mb').innerHTML=`
+  const mbEl=document.getElementById('mb');
+  mbEl.style.maxWidth=type==='add-proc-catalog'?'900px':'560px';
+  mbEl.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
       <h3 style="font-size:16px;font-weight:500;">${title}</h3>
       <button data-action="close-modal" style="color:var(--text2);font-size:22px;line-height:1;border:none;background:transparent;cursor:pointer;">×</button>
     </div>
-    <div style="padding:20px;max-height:80vh;overflow-y:auto;">${body}</div>`;
+    <div style="${type==='add-proc-catalog'?'':'padding:20px;'}max-height:80vh;overflow-y:auto;">${body}</div>`;
   document.getElementById('ov').classList.add('open');
 }
 function closeModal(){document.getElementById('ov').classList.remove('open');document.getElementById('mb').innerHTML='';}
@@ -2053,11 +2073,23 @@ window.openBatchEdit=function(sid){
           <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Fim</label><input type="time" class="inp" id="batchET"></div>
         </div>
         <div style="display:flex;gap:10px;">
-        <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Departamento</label>
-          <select class="inp" id="batchDept"><option value="">— Não alterar —</option>${Object.values(cl?.depts||{}).map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}</select>
+          <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Departamento</label>
+            <select class="inp" id="batchDept"><option value="">— Não alterar —</option>${Object.values(cl?.depts||{}).map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}</select>
+          </div>
+          <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Responsável</label>
+            <select class="inp" id="batchTrainer"><option value="">— Não alterar —</option>${tOpts('')}</select>
+          </div>
         </div>
-        <div style="flex:1;"><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Responsável</label>
-          <select class="inp" id="batchTrainer"><option value="">— Não alterar —</option>${tOpts('')}</select>
+        <div style="background:var(--blue-bg);border-radius:var(--r);padding:10px;">
+          <div style="font-size:11px;font-weight:500;color:var(--blue-t);margin-bottom:8px;">Replicadores — deixe em branco para não alterar</div>
+          <div style="display:flex;gap:10px;">
+            <div style="flex:1;"><label style="font-size:10px;color:var(--blue-t);display:block;margin-bottom:3px;">Replicador 1</label>
+              <select class="inp" id="batchRep1"><option value="">— Não alterar —</option><option value="__clear__">× Remover</option>${repOpts(cl,'')}</select>
+            </div>
+            <div style="flex:1;"><label style="font-size:10px;color:var(--blue-t);display:block;margin-bottom:3px;">Replicador 2</label>
+              <select class="inp" id="batchRep2"><option value="">— Não alterar —</option><option value="__clear__">× Remover</option>${repOpts(cl,'')}</select>
+            </div>
+          </div>
         </div>
         <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px;">Mover para outro dia</label>
           <select class="inp" id="batchMoveTo">
@@ -2080,6 +2112,8 @@ window.applyBatchEdit=async function(){
   const etVal=document.getElementById('batchET')?.value;
   const deptVal=document.getElementById('batchDept')?.value;
   const trainerVal=document.getElementById('batchTrainer')?.value;
+  const rep1Val=document.getElementById('batchRep1')?.value;
+  const rep2Val=document.getElementById('batchRep2')?.value;
   const moveTo=document.getElementById('batchMoveTo')?.value;
   const updates={};
   const moves=[];
@@ -2092,6 +2126,8 @@ window.applyBatchEdit=async function(){
       if(etVal) updates[`/sessions/${sid}/processes/${pid}/endTime`]=etVal;
       if(deptVal) updates[`/sessions/${sid}/processes/${pid}/deptId`]=deptVal;
       if(trainerVal) updates[`/sessions/${sid}/processes/${pid}/trainerId`]=trainerVal;
+      if(rep1Val) updates[`/sessions/${sid}/processes/${pid}/rep1`]=rep1Val==='__clear__'?'':rep1Val;
+      if(rep2Val) updates[`/sessions/${sid}/processes/${pid}/rep2`]=rep2Val==='__clear__'?'':rep2Val;
     }
   }
   if(Object.keys(updates).length) await fbUpdate('/',updates);
@@ -2102,6 +2138,8 @@ window.applyBatchEdit=async function(){
     if(etVal) updated.endTime=etVal;
     if(deptVal) updated.deptId=deptVal;
     if(trainerVal) updated.trainerId=trainerVal;
+    if(rep1Val) updated.rep1=rep1Val==='__clear__'?'':rep1Val;
+    if(rep2Val) updated.rep2=rep2Val==='__clear__'?'':rep2Val;
     await fbSet(`/sessions/${moveTo}/processes/${newPid}`,updated);
     await fbRemove(`/sessions/${sid}/processes/${pid}`);
   }
