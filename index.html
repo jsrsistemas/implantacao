@@ -212,10 +212,109 @@ const db = getDatabase(app);
 const _params = new URLSearchParams(window.location.search);
 const IS_CONFIRM_LINK = !!(_params.get('session') || _params.get('confirm')) && !!(_params.get('rep') || _params.get('proc'));
 
+const IS_CHECKLIST_LINK = !!_params.get('checklist') && !IS_CONFIRM_LINK;
+
 if(IS_CONFIRM_LINK){
-  // Esconde login imediatamente, antes mesmo do Firebase inicializar
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('confirm-screen').style.display = 'flex';
+}
+
+if(IS_CHECKLIST_LINK){
+  document.getElementById('login-screen').style.display='none';
+  // Render public checklist
+  (async()=>{
+    const cid=_params.get('checklist');
+    const DB_URL='https://implantationjsr-default-rtdb.firebaseio.com';
+    const dbGet=async p=>{const r=await fetch(`${DB_URL}${p}.json`);return r.ok?r.json():null;};
+    const client=await dbGet(`/clients/${cid}`);
+    const clData=await dbGet(`/clientChecklists/${cid}`);
+    const items=clData?Object.values(clData).filter(i=>i&&i.id).sort((a,b)=>(a.order??999)-(b.order??999)||a.name.localeCompare(b.name)):[];
+    const isLocked=clData?._locked||false;
+    const feito=items.filter(i=>i.status==='feito').length;
+    const pct=items.length>0?Math.round(feito/items.length*100):0;
+    const CSTAT={feito:{l:'Feito',ic:'✅'},pendente:{l:'Pendente',ic:'⏳'},nao_feito:{l:'Não feito',ic:'❌'}};
+    const grps={};
+    items.forEach(i=>{const g=i.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(i);});
+    const gNames=Object.keys(grps).sort();
+
+    document.body.innerHTML=`
+    <div style="min-height:100vh;background:#f5f4f0;padding:20px;">
+      <div style="max-width:680px;margin:0 auto;">
+        <div style="background:#fff;border:1px solid #e0ddd4;border-radius:12px;padding:24px;margin-bottom:16px;">
+          <div style="font-size:9px;letter-spacing:2.5px;color:#6b6a65;text-transform:uppercase;margin-bottom:8px;">TrainControl · JSR Sistemas</div>
+          <h1 style="font-size:20px;font-weight:500;margin-bottom:4px;">☑ Checklist — ${client?.name||'Implantação'}</h1>
+          <div style="font-size:13px;color:#6b6a65;">${feito} de ${items.length} itens concluídos · ${pct}%</div>
+          <div style="height:8px;background:#e0ddd4;border-radius:4px;overflow:hidden;margin-top:10px;">
+            <div style="height:100%;width:${pct}%;background:${pct>=70?'#3b6d11':pct>=40?'#854f0b':'#185fa5'};border-radius:4px;"></div>
+          </div>
+          ${isLocked?`<div style="margin-top:12px;padding:10px 14px;background:#eaf3de;border-radius:8px;color:#27500a;font-size:13px;">🔒 Checklist concluído — somente leitura</div>`:''}
+        </div>
+
+        ${isLocked?'':
+        `<div style="background:#fff8e6;border:1px solid #f0c040;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:#7a5000;">
+          ✏️ <strong>Seu nome:</strong> <input id="pubName" placeholder="Digite seu nome antes de marcar..." style="border:1px solid #f0c040;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;width:220px;">
+        </div>`}
+
+        ${gNames.map(g=>{
+          const gItems=grps[g];
+          const gFeito=gItems.filter(i=>i.status==='feito').length;
+          return `<div style="background:#fff;border:1px solid #e0ddd4;border-radius:12px;overflow:hidden;margin-bottom:12px;">
+            <div style="padding:10px 16px;background:#e6f1fb;border-bottom:1px solid #e0ddd4;display:flex;align-items:center;gap:10px;">
+              <span style="font-size:12px;font-weight:600;color:#0c447c;">📂 ${g}</span>
+              <span style="font-size:11px;color:#0c447c;">${gFeito}/${gItems.length}</span>
+            </div>
+            ${gItems.map(item=>{
+              const st=CSTAT[item.status||'pendente'];
+              return `<div id="row-${item.id}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid #e0ddd4;${item.status==='feito'?'background:#eaf3de;':''}">
+                <div style="flex:1;">
+                  <div style="font-size:14px;font-weight:500;${item.status==='feito'?'text-decoration:line-through;color:#6b6a65;':''}">${item.name}</div>
+                  ${item.obs?`<div style="font-size:11px;color:#6b6a65;margin-top:2px;">💬 ${item.obs}</div>`:''}
+                  ${item.lastBy?`<div style="font-size:10px;color:#9b9a95;margin-top:3px;">✏️ ${item.lastBy} · ${item.lastAt?new Date(item.lastAt).toLocaleString('pt-BR'):''}</div>`:''}
+                </div>
+                ${isLocked?`<span style="font-size:12px;padding:4px 10px;border-radius:20px;background:${item.status==='feito'?'#eaf3de':item.status==='nao_feito'?'#fcebeb':'#e6f1fb'};color:${item.status==='feito'?'#27500a':item.status==='nao_feito'?'#791f1f':'#0c447c'};">${st.ic} ${st.l}</span>`
+                :`<div style="display:flex;gap:4px;flex-shrink:0;">
+                  ${Object.entries(CSTAT).map(([k,v])=>`
+                    <button onclick="pubSetStatus('${cid}','${item.id}','${k}',this)"
+                      style="padding:5px 10px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid ${item.status===k?'transparent':'#c8c5ba'};background:${item.status===k?k==='feito'?'#eaf3de':k==='nao_feito'?'#fcebeb':'#e6f1fb':'transparent'};color:${item.status===k?k==='feito'?'#27500a':k==='nao_feito'?'#791f1f':'#0c447c':'#9b9a95'}">
+                      ${v.ic} ${v.l}</button>`).join('')}
+                </div>`}
+              </div>`;
+            }).join('')}
+          </div>`;
+        }).join('')}
+        <div style="text-align:center;font-size:11px;color:#9b9a95;margin-top:16px;">TrainControl · JSR Sistemas</div>
+      </div>
+    </div>`;
+
+    // Função de status pública
+    window.pubSetStatus=async function(cid,id,status,btn){
+      const name=document.getElementById('pubName')?.value.trim();
+      if(!name)return alert('Digite seu nome antes de marcar!');
+      const now=new Date().toISOString();
+      const ok=await fetch(`${DB_URL}/clientChecklists/${cid}/${id}.json`,{
+        method:'PATCH',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({status,lastBy:name,lastAt:now})
+      });
+      if(ok.ok){
+        // Atualiza visual
+        const row=document.getElementById(`row-${id}`);
+        if(row){
+          const CSTAT2={feito:{l:'Feito',ic:'✅'},pendente:{l:'Pendente',ic:'⏳'},nao_feito:{l:'Não feito',ic:'❌'}};
+          const st=CSTAT2[status];
+          row.style.background=status==='feito'?'#eaf3de':'';
+          const nameEl=row.querySelector('div>div:first-child');
+          if(nameEl)nameEl.style.textDecoration=status==='feito'?'line-through':'';
+          // Atualiza botões
+          row.querySelectorAll('button').forEach(b=>{
+            const k=b.getAttribute('onclick').match(/'(\w+)'\)$/)?.[1];
+            b.style.background=k===status?(k==='feito'?'#eaf3de':k==='nao_feito'?'#fcebeb':'#e6f1fb'):'transparent';
+            b.style.color=k===status?(k==='feito'?'#27500a':k==='nao_feito'?'#791f1f':'#0c447c'):'#9b9a95';
+            b.style.borderColor=k===status?'transparent':'#c8c5ba';
+          });
+        }
+      }
+    };
+  })();
 }
 
 (function checkConfirmLink(){
@@ -533,7 +632,7 @@ onAuthStateChanged(auth, user => {
       // Verifica se ainda é o mesmo usuário logado (evita race condition)
       if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
       D = snap.val() || {};
-      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{};
+      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.clientChecklists = D.clientChecklists||{};
       currentProfile = D.users[user.uid];
       if (!currentProfile) {
         if (Object.keys(D.users).length === 0) {
@@ -585,7 +684,7 @@ function renderSidebar(){
     {id:'horarios',ic:'◷',l:'Grade de horários'},
   ];
   if(p.role==='admin')nav.push({id:'catalogo',ic:'☷',l:'Catálogo'});
-  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
+  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'checklist',ic:'☑',l:'Checklist'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
   // Atualiza título na barra mobile
   const cur=nav.find(n=>n.id===S.view);
   const mobTitle=document.getElementById('mob-view-title');
@@ -2589,6 +2688,339 @@ function initCatalogDragDrop(){
   });
 }
 
+// ── CHECKLIST ─────────────────────────────────────────────────────────────
+function renderChecklist(){
+  const cs=myC();
+  const selCid=S.checkCid||'';
+  const selTab=S.checkTab||'cliente';
+  const template=Object.values(D.checklistTemplate||{}).sort((a,b)=>(a.order??999)-(b.order??999)||a.name.localeCompare(b.name));
+  const CSTAT={feito:{l:'Feito',ic:'✅',cls:'bs'},pendente:{l:'Pendente',ic:'⏳',cls:'bi'},nao_feito:{l:'Não feito',ic:'❌',cls:'bd'}};
+
+  const clData=selCid?D.clientChecklists?.[selCid]:null;
+  const isLocked=clData?._locked||false;
+  const clientItems=selCid?Object.values(clData||{}).filter(i=>i.id).sort((a,b)=>(a.order??999)-(b.order??999)||a.name.localeCompare(b.name)):[];
+  const feito=clientItems.filter(i=>i.status==='feito').length;
+  const pend=clientItems.filter(i=>i.status==='pendente').length;
+  const nao=clientItems.filter(i=>i.status==='nao_feito').length;
+  const pct=clientItems.length>0?Math.round(feito/clientItems.length*100):0;
+
+  return `<div class="ph">
+    <div><h2>☑ Checklist de implantação</h2><p>Validação por cliente com modelo base configurável</p></div>
+  </div>
+
+  <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;width:fit-content;margin-bottom:20px;">
+    <button class="btn" onclick="S.checkTab='modelo';render()" style="border:none;border-radius:0;padding:8px 20px;font-size:13px;${selTab==='modelo'?'background:var(--text);color:#fff;':''}">⚙ Modelo base</button>
+    <button class="btn" onclick="S.checkTab='cliente';render()" style="border:none;border-radius:0;border-left:1px solid var(--border);padding:8px 20px;font-size:13px;${selTab==='cliente'?'background:var(--text);color:#fff;':''}">👤 Por cliente</button>
+  </div>
+
+  ${selTab==='modelo'?`
+  <div class="card" style="padding:16px;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div>
+        <div style="font-size:14px;font-weight:500;">Modelo base</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px;">${template.length} item(s) — ponto de partida para cada cliente</div>
+      </div>
+      <button class="btn btn-p" onclick="openChecklistItemModal()">+ Novo item</button>
+    </div>
+    ${template.length===0?`<div style="text-align:center;padding:32px;color:var(--text2);font-size:13px;">Nenhum item ainda. Crie os itens padrão.</div>`:''}
+    <div style="display:flex;flex-direction:column;gap:4px;">
+      ${template.map((item,i)=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);">
+          <span style="font-size:13px;color:var(--text3);min-width:20px;">${i+1}</span>
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:500;">${item.name}</div>
+            ${item.category?`<div style="font-size:11px;color:var(--text2);">📂 ${item.category}</div>`:''}
+          </div>
+          <button class="btn btn-i btn-sm" onclick="openChecklistItemModal('${item.id}')">✎</button>
+          <button class="btn btn-d btn-sm" onclick="rmChecklistTemplate('${item.id}')">×</button>
+        </div>`).join('')}
+    </div>
+    ${template.length>0?`<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Aplicar modelo a um cliente:</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <select class="inp" id="applyModelCid" style="width:auto;font-size:13px;">
+          <option value="">Selecione o cliente...</option>
+          ${cs.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}
+        </select>
+        <button class="btn btn-p" onclick="applyChecklistModel()">▶ Aplicar modelo</button>
+      </div>
+    </div>`:''}
+  </div>
+  `:`
+  <!-- ABA POR CLIENTE -->
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+    <select class="inp" style="width:auto;font-size:13px;font-weight:500;" onchange="S.checkCid=this.value;render()">
+      <option value="">⚠️ Selecione um cliente...</option>
+      ${cs.map(c=>`<option value="${c.id}"${selCid===c.id?' selected':''}>${c.name}</option>`).join('')}
+    </select>
+    ${selCid&&clientItems.length>0?`
+      <button class="btn btn-sm btn-i" onclick="copyChecklistLink('${selCid}')">🔗 Copiar link de acesso</button>
+      <button class="btn btn-sm btn-p" onclick="exportChecklistPDF('${selCid}')">📄 Relatório PDF</button>
+      ${isLocked
+        ?`<button class="btn btn-sm btn-s" onclick="toggleChecklistLock('${selCid}',false)">🔓 Reabrir checklist</button>
+           <span style="font-size:11px;background:var(--green-bg);color:var(--green-t);padding:3px 10px;border-radius:20px;font-weight:500;">🔒 Concluído</span>`
+        :`<button class="btn btn-sm" style="background:var(--green-bg);color:var(--green-t);border:1px solid var(--green-t);font-weight:500;" onclick="toggleChecklistLock('${selCid}',true)">✅ Concluir e bloquear</button>`
+      }
+    `:''}
+  </div>
+
+  ${!selCid?`<div class="card" style="padding:40px;text-align:center;color:var(--text2);">
+    <div style="font-size:32px;margin-bottom:12px;">👆</div>
+    <div style="font-size:15px;font-weight:500;margin-bottom:6px;">Selecione um cliente para ver o checklist</div>
+  </div>`:`
+
+  ${isLocked?`<div style="background:var(--green-bg);border:1px solid var(--green-t);border-radius:var(--r);padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+    <span style="font-size:18px;">🔒</span>
+    <div><div style="font-size:13px;font-weight:500;color:var(--green-t);">Checklist concluído e bloqueado</div>
+    <div style="font-size:11px;color:var(--green-t);">Bloqueado por ${clData?._lockedBy||'?'} em ${clData?._lockedAt?new Date(clData._lockedAt).toLocaleString('pt-BR'):'?'}</div></div>
+    <button class="btn btn-sm" style="margin-left:auto;" onclick="toggleChecklistLock('${selCid}',false)">🔓 Reabrir</button>
+  </div>`:''}
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+    <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:4px;">✅ Feito</div><div style="font-size:26px;font-weight:500;color:var(--green);">${feito}</div></div>
+    <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:4px;">⏳ Pendente</div><div style="font-size:26px;font-weight:500;color:var(--amber);">${pend}</div></div>
+    <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:4px;">❌ Não feito</div><div style="font-size:26px;font-weight:500;color:var(--red);">${nao}</div></div>
+    <div class="stat"><div style="font-size:11px;color:var(--text2);margin-bottom:4px;">Progresso</div><div style="font-size:26px;font-weight:500;color:${pcol(pct)};">${pct}%</div>${pb(pct)}</div>
+  </div>
+
+  <div class="card" style="overflow:hidden;">
+    <div style="padding:12px 16px;background:var(--surface2);display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;">
+      <div style="font-size:13px;font-weight:500;">${gc(selCid)?.name||''} — ${clientItems.length} item(s)</div>
+      ${!isLocked?`<div style="display:flex;gap:6px;">
+        <button class="btn btn-sm" onclick="applyChecklistModelTo('${selCid}')">+ Do modelo base</button>
+        <button class="btn btn-sm btn-p" onclick="openClientChecklistItemModal('${selCid}')">+ Item personalizado</button>
+      </div>`:''}
+    </div>
+
+    ${clientItems.length===0?`<div style="padding:32px;text-align:center;color:var(--text2);font-size:13px;">
+      Nenhum item ainda.<br>
+      <button class="btn btn-p" style="margin-top:12px;" onclick="applyChecklistModelTo('${selCid}')">▶ Aplicar modelo base</button>
+    </div>`:''}
+
+    ${(()=>{
+      const grps={};
+      clientItems.forEach(item=>{const g=item.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(item);});
+      const gNames=Object.keys(grps).sort();
+      return gNames.map(g=>{
+        const gItems=grps[g];
+        const gFeito=gItems.filter(i=>i.status==='feito').length;
+        return `<div>
+          <div style="padding:7px 16px;background:var(--blue-bg);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+            <span style="font-size:12px;font-weight:600;color:var(--blue-t);">📂 ${g}</span>
+            <span style="font-size:11px;color:var(--blue-t);">${gFeito}/${gItems.length}</span>
+          </div>
+          ${gItems.map(item=>{
+            const locked=isLocked;
+            return `<div style="display:flex;align-items:flex-start;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border);${item.status==='feito'?'background:var(--green-bg);':''}" >
+              <div style="display:flex;gap:4px;flex-shrink:0;padding-top:1px;flex-wrap:wrap;">
+                ${Object.entries(CSTAT).map(([k,v])=>`
+                  <button ${locked?'disabled':''} onclick="setCheckStatus('${selCid}','${item.id}','${k}','${esc(currentProfile?.name||currentProfile?.email||'?')}')"
+                    style="padding:3px 8px;border-radius:20px;font-size:10px;font-weight:500;cursor:${locked?'not-allowed':'pointer'};opacity:${locked&&item.status!==k?'.5':'1'};border:1px solid ${item.status===k?'transparent':'var(--border2)'};background:${item.status===k?`var(--${k==='feito'?'green':k==='pendente'?'blue':'red'}-bg)`:'transparent'};color:${item.status===k?`var(--${k==='feito'?'green':k==='pendente'?'blue':'red'}-t)`:'var(--text3)'}">${v.ic} ${v.l}</button>`).join('')}
+              </div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:500;${item.status==='feito'?'text-decoration:line-through;color:var(--text2);':''}">${item.name}</div>
+                ${item.obs?`<div style="font-size:11px;color:var(--text2);margin-top:2px;">💬 ${item.obs}</div>`:''}
+                ${item.lastBy?`<div style="font-size:10px;color:var(--text3);margin-top:3px;">✏️ ${item.lastBy} · ${item.lastAt?new Date(item.lastAt).toLocaleString('pt-BR'):''}</div>`:''}
+              </div>
+              ${!locked?`<div style="display:flex;gap:4px;flex-shrink:0;">
+                <button class="btn btn-i btn-sm" onclick="openClientChecklistItemModal('${selCid}','${item.id}')">✎</button>
+                <button class="btn btn-d btn-sm" onclick="rmClientChecklistItem('${selCid}','${item.id}')">×</button>
+              </div>`:''}
+            </div>`;
+          }).join('')}
+        </div>`;
+      }).join('');
+    })()}
+  </div>
+  `}
+  `}`;
+}
+
+// Funções de checklist
+window.openChecklistItemModal=function(id=''){
+  const item=D.checklistTemplate?.[id];
+  const existingCats=[...new Set(Object.values(D.checklistTemplate||{}).map(i=>i.category).filter(Boolean))].sort();
+  const mbEl=document.getElementById('mb');
+  mbEl.style.maxWidth='480px';
+  mbEl.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <h3 style="font-size:15px;font-weight:500;">${id?'Editar item':'Novo item no modelo'}</h3>
+      <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:var(--text2);">×</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome do item</label><input class="inp" id="ckName" value="${esc(item?.name||'')}" placeholder="Ex: Configuração do servidor"></div>
+      <div><label class="lbl">Categoria</label>
+        <input class="inp" id="ckCat" list="ckCatList" value="${esc(item?.category||'')}" placeholder="Ex: Infraestrutura, Configuração...">
+        <datalist id="ckCatList">${existingCats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-p" onclick="saveChecklistItem('${id}')">Salvar</button>
+      </div>
+    </div>`;
+  document.getElementById('ov').classList.add('open');
+};
+
+window.saveChecklistItem=async function(id){
+  const name=document.getElementById('ckName')?.value.trim();
+  const category=document.getElementById('ckCat')?.value.trim()||'Geral';
+  if(!name)return alert('Informe o nome do item.');
+  if(id){
+    await fbUpdate(`/checklistTemplate/${id}`,{name,category});
+  } else {
+    const newId=gi();
+    await fbSet(`/checklistTemplate/${newId}`,{id:newId,name,category,order:Object.keys(D.checklistTemplate||{}).length});
+  }
+  closeModal();
+};
+
+window.rmChecklistTemplate=async function(id){
+  if(confirm('Remover este item do modelo base?'))await fbRemove(`/checklistTemplate/${id}`);
+};
+
+window.openClientChecklistItemModal=function(cid,id=''){
+  const item=D.clientChecklists?.[cid]?.[id];
+  const existingCats=[...new Set(Object.values(D.clientChecklists?.[cid]||{}).map(i=>i.category).filter(Boolean))].sort();
+  const mbEl=document.getElementById('mb');
+  mbEl.style.maxWidth='480px';
+  mbEl.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <h3 style="font-size:15px;font-weight:500;">${id?'Editar item':'Novo item personalizado'}</h3>
+      <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:var(--text2);">×</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome do item</label><input class="inp" id="ckClientName" value="${esc(item?.name||'')}" placeholder="Ex: Validar impressora fiscal"></div>
+      <div><label class="lbl">Categoria</label>
+        <input class="inp" id="ckClientCat" list="ckClientCatList" value="${esc(item?.category||'')}" placeholder="Ex: Infraestrutura...">
+        <datalist id="ckClientCatList">${existingCats.map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
+      </div>
+      <div><label class="lbl">Observação (opcional)</label><textarea class="inp" id="ckClientObs" rows="2" style="resize:vertical;">${esc(item?.obs||'')}</textarea></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-p" onclick="saveClientChecklistItem('${cid}','${id}')">Salvar</button>
+      </div>
+    </div>`;
+  document.getElementById('ov').classList.add('open');
+};
+
+window.saveClientChecklistItem=async function(cid,id){
+  const name=document.getElementById('ckClientName')?.value.trim();
+  const category=document.getElementById('ckClientCat')?.value.trim()||'Geral';
+  const obs=document.getElementById('ckClientObs')?.value.trim()||'';
+  if(!name)return alert('Informe o nome do item.');
+  if(id){
+    await fbUpdate(`/clientChecklists/${cid}/${id}`,{name,category,obs});
+  } else {
+    const newId=gi();
+    const order=Object.keys(D.clientChecklists?.[cid]||{}).length;
+    await fbSet(`/clientChecklists/${cid}/${newId}`,{id:newId,name,category,obs,status:'pendente',order});
+  }
+  closeModal();
+};
+
+window.rmClientChecklistItem=async function(cid,id){
+  if(confirm('Remover este item?'))await fbRemove(`/clientChecklists/${cid}/${id}`);
+};
+
+window.setCheckStatus=async function(cid,id,status,who){
+  const now=new Date().toISOString();
+  const by=who||(currentProfile?.name||currentProfile?.email||'Acesso externo');
+  await fbUpdate(`/clientChecklists/${cid}/${id}`,{status,lastBy:by,lastAt:now});
+};
+
+window.toggleChecklistLock=async function(cid,lock){
+  const who=currentProfile?.name||currentProfile?.email||'?';
+  const now=new Date().toISOString();
+  if(lock){
+    if(!confirm('Concluir e bloquear este checklist?\n\nNinguém poderá alterar os itens até que você reabra.'))return;
+    await fbUpdate(`/clientChecklists/${cid}`,{_locked:true,_lockedBy:who,_lockedAt:now});
+  } else {
+    if(!confirm('Reabrir este checklist para edição?'))return;
+    await fbUpdate(`/clientChecklists/${cid}`,{_locked:false,_lockedBy:'',_lockedAt:''});
+  }
+};
+
+window.copyChecklistLink=function(cid){
+  const base=window.location.origin+window.location.pathname;
+  const link=`${base}?checklist=${cid}`;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(link).then(()=>alert(`🔗 Link copiado!\n\nCompartilhe com quem precisa acessar o checklist:\n\n${link}\n\nA pessoa pode marcar os itens sem precisar de login.`));
+  } else {
+    prompt('Copie este link:',link);
+  }
+};
+
+window.exportChecklistPDF=function(cid){
+  const c=gc(cid); if(!c)return;
+  const clData=D.clientChecklists?.[cid]||{};
+  const items=Object.values(clData).filter(i=>i.id).sort((a,b)=>(a.order??999)-(b.order??999)||a.name.localeCompare(b.name));
+  const feito=items.filter(i=>i.status==='feito').length;
+  const pct=items.length>0?Math.round(feito/items.length*100):0;
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const CSTAT={feito:{l:'Feito',ic:'✅'},pendente:{l:'Pendente',ic:'⏳'},nao_feito:{l:'Não feito',ic:'❌'}};
+  const grps={};
+  items.forEach(i=>{const g=i.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(i);});
+  const gNames=Object.keys(grps).sort();
+  const rows=gNames.map(g=>{
+    const gItems=grps[g];
+    const gFeito=gItems.filter(i=>i.status==='feito').length;
+    return `<tr><td colspan="4" style="background:#e6f1fb;padding:7px 12px;font-weight:600;font-size:11px;color:#0c447c;border-top:2px solid #185fa5;">📂 ${g} — ${gFeito}/${gItems.length}</td></tr>`
+      +gItems.map((item,i)=>{
+        const bg=i%2===0?'#fff':'#f9f8f5';
+        const st=CSTAT[item.status||'pendente'];
+        return `<tr style="background:${bg};">
+          <td style="padding:8px 12px;font-size:12px;">${st.ic} ${st.l}</td>
+          <td style="padding:8px 12px;font-size:12px;font-weight:500;${item.status==='feito'?'text-decoration:line-through;color:#6b6a65;':''}">${item.name}</td>
+          <td style="padding:8px 12px;font-size:11px;color:#6b6a65;">${item.obs||'—'}</td>
+          <td style="padding:8px 12px;font-size:10px;color:#9b9a95;">${item.lastBy?`${item.lastBy}<br>${item.lastAt?new Date(item.lastAt).toLocaleString('pt-BR'):''}`:'-'}</td>
+        </tr>`;
+      }).join('');
+  }).join('');
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Checklist — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1a1a18;padding:32px;}
+  @media print{body{padding:0;}@page{margin:15mm 12mm;size:A4 portrait;}}
+  table{width:100%;border-collapse:collapse;}
+  th{background:#185fa5;color:#fff;padding:7px 10px;text-align:left;font-size:10px;font-weight:600;}
+  td{border-bottom:1px solid #e0ddd4;vertical-align:top;}</style></head><body>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #185fa5;">
+    <div><div style="font-size:10px;letter-spacing:2px;color:#6b6a65;text-transform:uppercase;margin-bottom:5px;">JSR Sistemas · TrainControl</div>
+    <h1 style="font-size:20px;font-weight:700;color:#185fa5;">${c.name}</h1>
+    <div style="font-size:13px;color:#6b6a65;margin-top:3px;">Checklist de implantação</div>
+    <div style="font-size:11px;color:#9b9a95;margin-top:2px;">Gerado em ${today}</div></div>
+    <div style="text-align:right;">
+      <div style="font-size:28px;font-weight:700;color:${pct>=70?'#3b6d11':pct>=40?'#854f0b':'#185fa5'};">${pct}%</div>
+      <div style="font-size:11px;color:#6b6a65;">${feito} de ${items.length} itens</div>
+      ${clData._locked?`<div style="font-size:10px;color:#27500a;margin-top:4px;">🔒 Concluído por ${clData._lockedBy}</div>`:''}
+    </div>
+  </div>
+  <table><thead><tr><th style="width:90px;">Status</th><th>Item</th><th style="width:180px;">Observação</th><th style="width:150px;">Última alteração</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <script>window.onload=()=>window.print();<\/script></body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
+};
+
+window.applyChecklistModel=async function(){
+  const cid=document.getElementById('applyModelCid')?.value;
+  if(!cid)return alert('Selecione um cliente.');
+  await applyChecklistModelTo(cid);
+};
+
+window.applyChecklistModelTo=async function(cid){
+  const template=Object.values(D.checklistTemplate||{});
+  if(!template.length)return alert('O modelo base está vazio. Adicione itens primeiro na aba "Modelo base".');
+  const existing=D.clientChecklists?.[cid]||{};
+  const existingTemplateIds=new Set(Object.values(existing).map(i=>i.templateId).filter(Boolean));
+  const toAdd=template.filter(t=>!existingTemplateIds.has(t.id));
+  if(!toAdd.length)return alert('Todos os itens do modelo já estão no checklist deste cliente.');
+  const baseOrder=Object.keys(existing).length;
+  const saves=toAdd.map((t,i)=>{
+    const newId=gi();
+    return fbSet(`/clientChecklists/${cid}/${newId}`,{id:newId,name:t.name,category:t.category||'Geral',obs:'',status:'pendente',templateId:t.id,order:baseOrder+i});
+  });
+  await Promise.all(saves);
+  S.checkCid=cid; S.checkTab='cliente'; render();
+  alert(`✅ ${toAdd.length} item(s) adicionados ao checklist!`);
+};
 function render(){
   renderSidebar();
   const ct=document.getElementById('content');
@@ -2598,6 +3030,7 @@ function render(){
   else if(S.view==='catalogo'){ct.innerHTML=renderCatalogo();setTimeout(initCatalogDragDrop,50);}
   else if(S.view==='clientes')ct.innerHTML=renderClientes();
   else if(S.view==='admin')ct.innerHTML=renderAdmin();
+  else if(S.view==='checklist')ct.innerHTML=renderChecklist();
   else if(S.view==='relatorios')ct.innerHTML=renderRelatorios();
 }
 
