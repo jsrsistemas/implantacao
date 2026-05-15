@@ -220,100 +220,54 @@ if(IS_CONFIRM_LINK){
 }
 
 if(IS_CHECKLIST_LINK){
+  // Mostra tela de boas-vindas com login
+  const cid=_params.get('checklist');
   document.getElementById('login-screen').style.display='none';
-  // Render public checklist
+  // Busca nome do cliente publicamente
   (async()=>{
-    const cid=_params.get('checklist');
     const DB_URL='https://implantationjsr-default-rtdb.firebaseio.com';
-    const dbGet=async p=>{const r=await fetch(`${DB_URL}${p}.json`);return r.ok?r.json():null;};
-    const client=await dbGet(`/clients/${cid}`);
-    const clData=await dbGet(`/clientChecklists/${cid}`);
-    const items=clData?Object.values(clData).filter(i=>i&&i.id).sort((a,b)=>(a.order??999)-(b.order??999)||a.name.localeCompare(b.name)):[];
-    const isLocked=clData?._locked||false;
-    const feito=items.filter(i=>i.status==='feito').length;
-    const pct=items.length>0?Math.round(feito/items.length*100):0;
-    const CSTAT={feito:{l:'Feito',ic:'✅'},pendente:{l:'Pendente',ic:'⏳'},nao_feito:{l:'Não feito',ic:'❌'}};
-    const grps={};
-    items.forEach(i=>{const g=i.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(i);});
-    const gNames=Object.keys(grps).sort();
-
+    let clientName='Implantação';
+    try{
+      const r=await fetch(`${DB_URL}/clients/${cid}/name.json`);
+      if(r.ok){const n=await r.json();if(n)clientName=n;}
+    }catch(e){}
     document.body.innerHTML=`
-    <div style="min-height:100vh;background:#f5f4f0;padding:20px;">
-      <div style="max-width:680px;margin:0 auto;">
-        <div style="background:#fff;border:1px solid #e0ddd4;border-radius:12px;padding:24px;margin-bottom:16px;">
-          <div style="font-size:9px;letter-spacing:2.5px;color:#6b6a65;text-transform:uppercase;margin-bottom:8px;">TrainControl · JSR Sistemas</div>
-          <h1 style="font-size:20px;font-weight:500;margin-bottom:4px;">☑ Checklist — ${client?.name||'Implantação'}</h1>
-          <div style="font-size:13px;color:#6b6a65;">${feito} de ${items.length} itens concluídos · ${pct}%</div>
-          <div style="height:8px;background:#e0ddd4;border-radius:4px;overflow:hidden;margin-top:10px;">
-            <div style="height:100%;width:${pct}%;background:${pct>=70?'#3b6d11':pct>=40?'#854f0b':'#185fa5'};border-radius:4px;"></div>
-          </div>
-          ${isLocked?`<div style="margin-top:12px;padding:10px 14px;background:#eaf3de;border-radius:8px;color:#27500a;font-size:13px;">🔒 Checklist concluído — somente leitura</div>`:''}
+    <div style="min-height:100vh;background:#f5f4f0;display:flex;align-items:center;justify-content:center;padding:24px;">
+      <div style="background:#fff;border:1px solid #e0ddd4;border-radius:12px;padding:40px 36px;width:100%;max-width:420px;box-shadow:0 4px 32px rgba(0,0,0,.08);text-align:center;">
+        <div style="font-size:9px;letter-spacing:2.5px;color:#6b6a65;text-transform:uppercase;margin-bottom:16px;">TrainControl · JSR Sistemas</div>
+        <div style="font-size:48px;margin-bottom:16px;">☑️</div>
+        <h1 style="font-size:20px;font-weight:500;margin-bottom:8px;">Checklist de Implantação</h1>
+        <div style="font-size:15px;color:#185fa5;font-weight:500;margin-bottom:6px;">${clientName}</div>
+        <p style="font-size:13px;color:#6b6a65;margin-bottom:28px;line-height:1.6;">Faça login com seu acesso JSR para visualizar e marcar os itens do checklist.</p>
+        <div id="ck-err" style="display:none;background:#fcebeb;color:#791f1f;border-radius:8px;padding:10px 13px;font-size:13px;margin-bottom:14px;"></div>
+        <div style="display:flex;flex-direction:column;gap:12px;text-align:left;">
+          <div><label style="font-size:12px;color:#6b6a65;font-weight:500;display:block;margin-bottom:5px;">E-mail</label><input id="ck-email" type="email" placeholder="seu@email.com" style="width:100%;padding:10px 12px;border:1px solid #c8c5ba;border-radius:8px;font-size:14px;font-family:inherit;"></div>
+          <div><label style="font-size:12px;color:#6b6a65;font-weight:500;display:block;margin-bottom:5px;">Senha</label><input id="ck-senha" type="password" placeholder="••••••••" style="width:100%;padding:10px 12px;border:1px solid #c8c5ba;border-radius:8px;font-size:14px;font-family:inherit;"></div>
+          <button id="ck-btn" style="width:100%;padding:12px;background:#1a1a18;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;margin-top:4px;">Entrar e acessar checklist</button>
         </div>
-
-        ${isLocked?'':
-        `<div style="background:#fff8e6;border:1px solid #f0c040;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:#7a5000;">
-          ✏️ <strong>Seu nome:</strong> <input id="pubName" placeholder="Digite seu nome antes de marcar..." style="border:1px solid #f0c040;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;width:220px;">
-        </div>`}
-
-        ${gNames.map(g=>{
-          const gItems=grps[g];
-          const gFeito=gItems.filter(i=>i.status==='feito').length;
-          return `<div style="background:#fff;border:1px solid #e0ddd4;border-radius:12px;overflow:hidden;margin-bottom:12px;">
-            <div style="padding:10px 16px;background:#e6f1fb;border-bottom:1px solid #e0ddd4;display:flex;align-items:center;gap:10px;">
-              <span style="font-size:12px;font-weight:600;color:#0c447c;">📂 ${g}</span>
-              <span style="font-size:11px;color:#0c447c;">${gFeito}/${gItems.length}</span>
-            </div>
-            ${gItems.map(item=>{
-              const st=CSTAT[item.status||'pendente'];
-              return `<div id="row-${item.id}" style="display:flex;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid #e0ddd4;${item.status==='feito'?'background:#eaf3de;':''}">
-                <div style="flex:1;">
-                  <div style="font-size:14px;font-weight:500;${item.status==='feito'?'text-decoration:line-through;color:#6b6a65;':''}">${item.name}</div>
-                  ${item.obs?`<div style="font-size:11px;color:#6b6a65;margin-top:2px;">💬 ${item.obs}</div>`:''}
-                  ${item.lastBy?`<div style="font-size:10px;color:#9b9a95;margin-top:3px;">✏️ ${item.lastBy} · ${item.lastAt?new Date(item.lastAt).toLocaleString('pt-BR'):''}</div>`:''}
-                </div>
-                ${isLocked?`<span style="font-size:12px;padding:4px 10px;border-radius:20px;background:${item.status==='feito'?'#eaf3de':item.status==='nao_feito'?'#fcebeb':'#e6f1fb'};color:${item.status==='feito'?'#27500a':item.status==='nao_feito'?'#791f1f':'#0c447c'};">${st.ic} ${st.l}</span>`
-                :`<div style="display:flex;gap:4px;flex-shrink:0;">
-                  ${Object.entries(CSTAT).map(([k,v])=>`
-                    <button onclick="pubSetStatus('${cid}','${item.id}','${k}',this)"
-                      style="padding:5px 10px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid ${item.status===k?'transparent':'#c8c5ba'};background:${item.status===k?k==='feito'?'#eaf3de':k==='nao_feito'?'#fcebeb':'#e6f1fb':'transparent'};color:${item.status===k?k==='feito'?'#27500a':k==='nao_feito'?'#791f1f':'#0c447c':'#9b9a95'}">
-                      ${v.ic} ${v.l}</button>`).join('')}
-                </div>`}
-              </div>`;
-            }).join('')}
-          </div>`;
-        }).join('')}
-        <div style="text-align:center;font-size:11px;color:#9b9a95;margin-top:16px;">TrainControl · JSR Sistemas</div>
+        <p style="font-size:11px;color:#9b9a95;margin-top:20px;">Acesso restrito · TrainControl JSR</p>
       </div>
     </div>`;
-
-    // Função de status pública
-    window.pubSetStatus=async function(cid,id,status,btn){
-      const name=document.getElementById('pubName')?.value.trim();
-      if(!name)return alert('Digite seu nome antes de marcar!');
-      const now=new Date().toISOString();
-      const ok=await fetch(`${DB_URL}/clientChecklists/${cid}/${id}.json`,{
-        method:'PATCH',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({status,lastBy:name,lastAt:now})
-      });
-      if(ok.ok){
-        // Atualiza visual
-        const row=document.getElementById(`row-${id}`);
-        if(row){
-          const CSTAT2={feito:{l:'Feito',ic:'✅'},pendente:{l:'Pendente',ic:'⏳'},nao_feito:{l:'Não feito',ic:'❌'}};
-          const st=CSTAT2[status];
-          row.style.background=status==='feito'?'#eaf3de':'';
-          const nameEl=row.querySelector('div>div:first-child');
-          if(nameEl)nameEl.style.textDecoration=status==='feito'?'line-through':'';
-          // Atualiza botões
-          row.querySelectorAll('button').forEach(b=>{
-            const k=b.getAttribute('onclick').match(/'(\w+)'\)$/)?.[1];
-            b.style.background=k===status?(k==='feito'?'#eaf3de':k==='nao_feito'?'#fcebeb':'#e6f1fb'):'transparent';
-            b.style.color=k===status?(k==='feito'?'#27500a':k==='nao_feito'?'#791f1f':'#0c447c'):'#9b9a95';
-            b.style.borderColor=k===status?'transparent':'#c8c5ba';
-          });
-        }
+    // Login handler
+    document.getElementById('ck-btn').onclick=async()=>{
+      const email=document.getElementById('ck-email').value.trim();
+      const senha=document.getElementById('ck-senha').value;
+      const errEl=document.getElementById('ck-err');
+      const btn=document.getElementById('ck-btn');
+      errEl.style.display='none';
+      if(!email||!senha){errEl.textContent='Preencha e-mail e senha.';errEl.style.display='block';return;}
+      btn.textContent='Entrando...';btn.disabled=true;
+      try{
+        const {getAuth,signInWithEmailAndPassword}=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+        await signInWithEmailAndPassword(getAuth(),email,senha);
+        // Após login, redireciona para o checklist do cliente
+        window.location.href=window.location.pathname+'?goChecklist='+cid;
+      }catch(e){
+        errEl.textContent='E-mail ou senha incorretos.';errEl.style.display='block';
+        btn.textContent='Entrar e acessar checklist';btn.disabled=false;
       }
     };
+    document.getElementById('ck-senha').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('ck-btn').click();});
   })();
 }
 
@@ -657,6 +611,9 @@ onAuthStateChanged(auth, user => {
       document.getElementById('login-screen').style.display = 'none';
       document.getElementById('app-screen').style.display = 'block';
       document.getElementById('sync-bar').style.display = 'flex';
+      // Se veio de link de checklist, abre direto
+      const goChecklist=_params.get('goChecklist');
+      if(goChecklist){S.view='checklist';S.checkCid=goChecklist;S.checkTab='cliente';}
       render();
     });
   } else {
