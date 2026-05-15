@@ -2709,8 +2709,8 @@ function renderChecklist(){
   </div>
 
   <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;width:fit-content;margin-bottom:20px;">
-    <button class="btn" onclick="S.checkTab='modelo';render()" style="border:none;border-radius:0;padding:8px 20px;font-size:13px;${selTab==='modelo'?'background:var(--text);color:#fff;':''}">⚙ Modelo base</button>
-    <button class="btn" onclick="S.checkTab='cliente';render()" style="border:none;border-radius:0;border-left:1px solid var(--border);padding:8px 20px;font-size:13px;${selTab==='cliente'?'background:var(--text);color:#fff;':''}">👤 Por cliente</button>
+    <button class="btn" onclick="setS('checkTab','modelo')" style="border:none;border-radius:0;padding:8px 20px;font-size:13px;${selTab==='modelo'?'background:var(--text);color:#fff;':''}">⚙ Modelo base</button>
+    <button class="btn" onclick="setS('checkTab','cliente')" style="border:none;border-radius:0;border-left:1px solid var(--border);padding:8px 20px;font-size:13px;${selTab==='cliente'?'background:var(--text);color:#fff;':''}">👤 Por cliente</button>
   </div>
 
   ${selTab==='modelo'?`
@@ -2720,7 +2720,10 @@ function renderChecklist(){
         <div style="font-size:14px;font-weight:500;">Modelo base</div>
         <div style="font-size:12px;color:var(--text2);margin-top:2px;">${template.length} item(s) — ponto de partida para cada cliente</div>
       </div>
-      <button class="btn btn-p" onclick="openChecklistItemModal()">+ Novo item</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-w" onclick="seedChecklistTemplate()">⬇ Importar checklist JSR</button>
+        <button class="btn btn-p" onclick="openChecklistItemModal()">+ Novo item</button>
+      </div>
     </div>
     ${template.length===0?`<div style="text-align:center;padding:32px;color:var(--text2);font-size:13px;">Nenhum item ainda. Crie os itens padrão.</div>`:''}
     <div style="display:flex;flex-direction:column;gap:4px;">
@@ -2749,7 +2752,7 @@ function renderChecklist(){
   `:`
   <!-- ABA POR CLIENTE -->
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
-    <select class="inp" style="width:auto;font-size:13px;font-weight:500;" onchange="S.checkCid=this.value;render()">
+    <select class="inp" style="width:auto;font-size:13px;font-weight:500;" onchange="setS('checkCid',this.value)">
       <option value="">⚠️ Selecione um cliente...</option>
       ${cs.map(c=>`<option value="${c.id}"${selCid===c.id?' selected':''}>${c.name}</option>`).join('')}
     </select>
@@ -2836,7 +2839,96 @@ function renderChecklist(){
   `}`;
 }
 
-// Funções de checklist
+window.seedChecklistTemplate=async function(){
+  if(!confirm('Isso vai adicionar todos os itens padrão do checklist JSR ao modelo base. Continuar?'))return;
+  const items=[
+    // MÓDULO ERP
+    {name:'Cadastro de Pessoa',category:'Módulo ERP'},
+    {name:'Cadastro Empresa',category:'Módulo ERP'},
+    {name:'Cadastro de Fornecedor / Cliente (Próprio CNPJ da Empresa)',category:'Módulo ERP'},
+    {name:'Migração de cadastro de produtos no módulo ERP / migração do BD do atual sistema do cliente',category:'Módulo ERP'},
+    {name:'Importação da Planilha IBPT',category:'Módulo ERP'},
+    {name:'Cadastro da impressão dos relatórios das telas',category:'Módulo ERP'},
+    {name:'Parametrizar certificado',category:'Módulo ERP'},
+    {name:'Cadastro do usuário JSR com permissão especial',category:'Módulo ERP'},
+    // RETAGUARDA
+    {name:'Parâmetros do Módulo',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Carga parâmetro Dinâmico (solicitar ao DBA) — Verificar custo base',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Parametrizar carga de produto com cliente',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Parâmetro empresa (certificado / precificação / operação de movimentações)',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Tipo de Preço — Ativação (tabelas de preços)',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Local de estoque',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Cadastro de departamento',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Cadastro de gôndola',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Classificação ABC',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Parametrizar Figura fiscal PDV e se necessário Figura fiscal UF',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Colocar logo marca associado ao sistema',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Criar código de oper. interna 9999 (baixa de venda) — associar no parâmetro da empresa',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Colocar Segmento (via insert BD)',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Cadastro das principais operações internas',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Configurar transferência Recebimento (em caso de MULTI LOJAS)',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Cadastro de operador DATA para teste com permissões',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Cadastro de Layout da Etiqueta',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Cadastro de Finalizadora (fazer e passar para o frente)',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Promoção — verificar se o cliente tem pasta de promoção vigente no atual sistema',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Verificar se o cliente tem algum tipo de % de desconto ou acréscimo no código',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Pegar nos departamentos as listas dos códigos dos setores',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Parametrizar Percentual de diferença de custo novo e custo antigo',category:'Retaguarda - Parâmetros / Cadastros'},
+    {name:'Emitir 1° nota para identificar se está ok (cancelar nota após teste)',category:'Retaguarda - Parâmetros / Cadastros'},
+    // MIGRAÇÃO DE DADOS
+    {name:'Migração da categoria',category:'Migração de Dados'},
+    {name:'Migração dos produtos',category:'Migração de Dados'},
+    {name:'Migração dos tributos de entrada/saída (ICMS, IVA, PIS, COFINS, NCM CEST.)',category:'Migração de Dados'},
+    {name:'Migração dos códigos',category:'Migração de Dados'},
+    {name:'Migração das embalagens',category:'Migração de Dados'},
+    {name:'Migração do preço de venda',category:'Migração de Dados'},
+    {name:'Migração do custo',category:'Migração de Dados'},
+    {name:'Migração do estoque',category:'Migração de Dados'},
+    {name:'Migração do cadastro de pessoa (cliente e fornecedor)',category:'Migração de Dados'},
+    {name:'Migração do financeiro',category:'Migração de Dados'},
+    {name:'Migração das operações financeiras',category:'Migração de Dados'},
+    {name:'Verificar situação específica dos itens INATIVOS no sistema anterior do cliente',category:'Migração de Dados'},
+    {name:'Informações de integração com a balança (nutricional, validade, ingredientes)',category:'Migração de Dados'},
+    {name:'Verificar migração das informações destinadas à integração com terceiros',category:'Migração de Dados'},
+    // INTEGRAÇÃO/CONFIGURAÇÃO
+    {name:'Configurar Backup no servidor',category:'Integração / Configuração'},
+    {name:'Parametrizar bittorrent ou outro app de transferência de arquivo de venda para o servidor',category:'Integração / Configuração'},
+    {name:'Parametrizar pasta pdvlog',category:'Integração / Configuração'},
+    {name:'Parametrizar captura do XML NFCE',category:'Integração / Configuração'},
+    {name:'Parametrizar app transf (caso necessário)',category:'Integração / Configuração'},
+    {name:'Parametrizar máquina de recebimento de nota e emissão de nota (criar pastas)',category:'Integração / Configuração'},
+    {name:'Parametrizar Config. na máquina — loja filial ou loja 2 (verificar compatibilidade com número da loja)',category:'Integração / Configuração'},
+    {name:'Configurar Backup secundário',category:'Integração / Configuração'},
+    {name:'Terminal de consulta',category:'Integração / Configuração'},
+    {name:'APP de terceiros (montar pasta e ambientes de integração)',category:'Integração / Configuração'},
+    {name:'Parametrizar baixa de venda (caminhos)',category:'Integração / Configuração'},
+    {name:'Pré pedido configurado',category:'Integração / Configuração'},
+    {name:'Carga Produto e cliente',category:'Integração / Configuração'},
+    {name:'Carga Balança',category:'Integração / Configuração'},
+    {name:'Carga operadores',category:'Integração / Configuração'},
+    {name:'Configurar periféricos integrados ao sistema (etiquetadora e impressora térmica)',category:'Integração / Configuração'},
+    {name:'Carga de Finalizadora (se necessário)',category:'Integração / Configuração'},
+    // FRENTE DE CAIXA
+    {name:'Passar cupom com cada tipo de produto com figura fiscal diferente e verificar',category:'Frente de Caixa'},
+    {name:'Ativação do TEF',category:'Frente de Caixa'},
+    {name:'Ver cadastro de CFOP de venda com a frente',category:'Frente de Caixa'},
+    {name:'Ver com o cliente a questão do crédito da carne',category:'Frente de Caixa'},
+    {name:'Testar as cargas',category:'Frente de Caixa'},
+    {name:'Ativação das promoções condicionais',category:'Frente de Caixa'},
+    {name:'Verificar se foi parametrizado o regime tributário correto',category:'Frente de Caixa'},
+    // MÓDULO FISCAL
+    {name:'Parametrizar nova empresa caso esteja nos regimes (Lucro ou Presumido)',category:'Módulo Fiscal'},
+    {name:'Colocar os relatórios da pasta SPED',category:'Módulo Fiscal'},
+  ];
+  const batch={};
+  items.forEach((item,i)=>{
+    const id=gi();
+    batch[id]={id,name:item.name,category:item.category,order:i};
+  });
+  await fbUpdate('/checklistTemplate',batch);
+  alert(`✅ ${items.length} itens adicionados ao modelo base!`);
+  render();
+};
 window.openChecklistItemModal=function(id=''){
   const item=D.checklistTemplate?.[id];
   const existingCats=[...new Set(Object.values(D.checklistTemplate||{}).map(i=>i.category).filter(Boolean))].sort();
@@ -3033,6 +3125,8 @@ function render(){
   else if(S.view==='checklist')ct.innerHTML=renderChecklist();
   else if(S.view==='relatorios')ct.innerHTML=renderRelatorios();
 }
+window.render=render;
+window.setS=(key,val)=>{S[key]=val;render();};
 
 // ── EVENTS ────────────────────────────────────────────────────────────────
 const q = id => document.getElementById(id)?.value?.trim()||'';
