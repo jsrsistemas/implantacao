@@ -2771,21 +2771,26 @@ function renderChecklist(){
           </div>
           ${gItems.map(item=>{
             const locked=isLocked;
-            return `<div style="display:flex;align-items:flex-start;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border);${item.status==='feito'?'background:var(--green-bg);':''}" >
-              <div style="display:flex;gap:4px;flex-shrink:0;padding-top:1px;flex-wrap:wrap;">
+            return `<div style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border);${item.status==='feito'?'background:var(--green-bg);':''}" >
+              <!-- Linha 1: nome + ações admin -->
+              <div style="display:flex;align-items:flex-start;gap:8px;">
+                ${!locked?`<span class="ck-drag-handle" data-cid="${selCid}" data-id="${item.id}" style="cursor:grab;color:var(--text3);font-size:16px;padding:2px 2px;flex-shrink:0;user-select:none;line-height:1;margin-top:1px;">⠿</span>`:''}
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:13px;font-weight:500;${item.status==='feito'?'text-decoration:line-through;color:var(--text2);':''}">${item.name}</div>
+                  ${item.obs?`<div style="font-size:11px;color:var(--text2);margin-top:2px;">💬 ${item.obs}</div>`:''}
+                  ${item.lastBy?`<div style="font-size:10px;color:var(--text3);margin-top:3px;">✏️ ${item.lastBy} · ${item.lastAt?new Date(item.lastAt).toLocaleString('pt-BR'):''}</div>`:''}
+                </div>
+                ${!locked?`<div style="display:flex;gap:4px;flex-shrink:0;">
+                  <button class="btn btn-i btn-sm" onclick="openClientChecklistItemModal('${selCid}','${item.id}')">✎</button>
+                  <button class="btn btn-d btn-sm" onclick="rmClientChecklistItem('${selCid}','${item.id}')">×</button>
+                </div>`:''}
+              </div>
+              <!-- Linha 2: botões de status (largura total, mobile-friendly) -->
+              <div style="display:flex;gap:6px;">
                 ${Object.entries(CSTAT).map(([k,v])=>`
                   <button ${locked?'disabled':''} onclick="setCheckStatus('${selCid}','${item.id}','${k}','${esc(currentProfile?.name||currentProfile?.email||'?')}')"
-                    style="padding:3px 8px;border-radius:20px;font-size:10px;font-weight:500;cursor:${locked?'not-allowed':'pointer'};opacity:${locked&&item.status!==k?'.5':'1'};border:1px solid ${item.status===k?'transparent':'var(--border2)'};background:${item.status===k?`var(--${k==='feito'?'green':k==='pendente'?'blue':'red'}-bg)`:'transparent'};color:${item.status===k?`var(--${k==='feito'?'green':k==='pendente'?'blue':'red'}-t)`:'var(--text3)'}">${v.ic} ${v.l}</button>`).join('')}
+                    style="flex:1;padding:7px 4px;border-radius:8px;font-size:12px;font-weight:500;cursor:${locked?'not-allowed':'pointer'};opacity:${locked&&item.status!==k?'.5':'1'};border:1px solid ${item.status===k?'transparent':'var(--border2)'};background:${item.status===k?`var(--${k==='feito'?'green':k==='pendente'?'blue':'red'}-bg)`:'var(--surface2)'};color:${item.status===k?`var(--${k==='feito'?'green':k==='pendente'?'blue':'red'}-t)`:'var(--text3)'};">${v.ic} ${v.l}</button>`).join('')}
               </div>
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:13px;font-weight:500;${item.status==='feito'?'text-decoration:line-through;color:var(--text2);':''}">${item.name}</div>
-                ${item.obs?`<div style="font-size:11px;color:var(--text2);margin-top:2px;">💬 ${item.obs}</div>`:''}
-                ${item.lastBy?`<div style="font-size:10px;color:var(--text3);margin-top:3px;">✏️ ${item.lastBy} · ${item.lastAt?new Date(item.lastAt).toLocaleString('pt-BR'):''}</div>`:''}
-              </div>
-              ${!locked?`<div style="display:flex;gap:4px;flex-shrink:0;">
-                <button class="btn btn-i btn-sm" onclick="openClientChecklistItemModal('${selCid}','${item.id}')">✎</button>
-                <button class="btn btn-d btn-sm" onclick="rmClientChecklistItem('${selCid}','${item.id}')">×</button>
-              </div>`:''}
             </div>`;
           }).join('')}
         </div>`;
@@ -2989,13 +2994,51 @@ window.toggleChecklistLock=async function(cid,lock){
   }
 };
 
+function initChecklistDragDrop(){
+  document.querySelectorAll('.ck-drag-handle').forEach(handle=>{
+    const row=handle.closest('[style*="flex-direction:column"]');
+    if(!row)return;
+    const container=row.parentElement;
+    row.setAttribute('draggable','false');
+    handle.addEventListener('mousedown',()=>row.setAttribute('draggable','true'));
+    handle.addEventListener('mouseup',()=>row.setAttribute('draggable','false'));
+    row.addEventListener('dragstart',e=>{
+      window._ckDragging=row;
+      setTimeout(()=>row.style.opacity='.35',0);
+      e.dataTransfer.effectAllowed='move';
+    });
+    row.addEventListener('dragend',async()=>{
+      row.style.opacity='';
+      const dragging=window._ckDragging; window._ckDragging=null;
+      const cid=handle.dataset.cid;
+      const allRows=[...container.children].filter(r=>r.querySelector('.ck-drag-handle'));
+      const updates={};
+      allRows.forEach((r,i)=>{
+        const h=r.querySelector('.ck-drag-handle');
+        if(h&&h.dataset.id) updates[`/clientChecklists/${cid}/${h.dataset.id}/order`]=i;
+      });
+      if(Object.keys(updates).length) await fbUpdate('/',updates);
+    });
+    container.addEventListener('dragover',e=>{
+      e.preventDefault();
+      const dragging=window._ckDragging; if(!dragging||dragging===row)return;
+      const rect=row.getBoundingClientRect();
+      if(e.clientY<rect.top+rect.height/2) container.insertBefore(dragging,row);
+      else container.insertBefore(dragging,row.nextSibling);
+    });
+  });
+}
+
 window.copyChecklistLink=function(cid){
+  const c=gc(cid);
+  const clientName=c?.name||'cliente';
   const base=window.location.origin+window.location.pathname;
   const link=`${base}?checklist=${cid}`;
+  const msg=`📋 *Checklist de Implantação — ${clientName}*\n\nOlá! Segue o link para acessar e marcar os itens do checklist desta implantação:\n\n${link}\n\nFaça login com seu usuário e senha do TrainControl para acessar.\n\n_JSR Sistemas_`;
   if(navigator.clipboard){
-    navigator.clipboard.writeText(link).then(()=>alert(`🔗 Link copiado!\n\nCompartilhe com quem precisa acessar o checklist:\n\n${link}\n\nA pessoa pode marcar os itens sem precisar de login.`));
+    navigator.clipboard.writeText(msg).then(()=>alert(`✅ Mensagem copiada!\n\nCole no WhatsApp — já inclui o nome do cliente e instruções:\n\n📋 Checklist — ${clientName}`));
   } else {
-    prompt('Copie este link:',link);
+    prompt('Copie a mensagem:',msg);
   }
 };
 
@@ -3079,7 +3122,7 @@ function render(){
   else if(S.view==='catalogo'){ct.innerHTML=renderCatalogo();setTimeout(initCatalogDragDrop,50);}
   else if(S.view==='clientes')ct.innerHTML=renderClientes();
   else if(S.view==='admin')ct.innerHTML=renderAdmin();
-  else if(S.view==='checklist')ct.innerHTML=renderChecklist();
+  else if(S.view==='checklist'){ct.innerHTML=renderChecklist();setTimeout(initChecklistDragDrop,50);}
   else if(S.view==='relatorios')ct.innerHTML=renderRelatorios();
 }
 window.render=render;
