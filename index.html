@@ -641,7 +641,8 @@ function renderSidebar(){
     {id:'horarios',ic:'◷',l:'Grade de horários'},
   ];
   if(p.role==='admin')nav.push({id:'catalogo',ic:'☷',l:'Catálogo'});
-  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'checklist',ic:'☑',l:'Checklist'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
+  nav.push({id:'checklist',ic:'☑',l:'Checklist'});
+  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
   // Atualiza título na barra mobile
   const cur=nav.find(n=>n.id===S.view);
   const mobTitle=document.getElementById('mob-view-title');
@@ -2650,47 +2651,43 @@ function renderChecklist(){
   const cs=myC();
   const selCid=S.checkCid||'';
   const selTab=S.checkTab||'cliente';
+  const isAdmin=currentProfile?.role==='admin';
   const template=Object.values(D.checklistTemplate||{}).sort((a,b)=>(a.order??999)-(b.order??999)||a.name.localeCompare(b.name));
   const CSTAT={feito:{l:'Feito',ic:'✅',cls:'bs'},pendente:{l:'Pendente',ic:'⏳',cls:'bi'},nao_feito:{l:'Não feito',ic:'❌',cls:'bd'}};
-
   const clData=selCid?D.clientChecklists?.[selCid]:null;
   const isLocked=clData?._locked||false;
+  const canEdit=isAdmin&&!isLocked;
+  const canMark=!isLocked;
   const clientItems=selCid?Object.values(clData||{}).filter(i=>i.id).sort((a,b)=>(a.order??999)-(b.order??999)||a.name.localeCompare(b.name)):[];
   const feito=clientItems.filter(i=>i.status==='feito').length;
   const pend=clientItems.filter(i=>i.status==='pendente').length;
   const nao=clientItems.filter(i=>i.status==='nao_feito').length;
   const pct=clientItems.length>0?Math.round(feito/clientItems.length*100):0;
 
-  return `<div class="ph">
-    <div><h2>☑ Checklist de implantação</h2><p>Validação por cliente com modelo base configurável</p></div>
-  </div>
+  return `<div class="ph"><div><h2>☑ Checklist de implantação</h2><p>Validação por cliente</p></div></div>
 
-  <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;width:fit-content;margin-bottom:20px;">
+  ${isAdmin?`<div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;width:fit-content;margin-bottom:20px;">
     <button class="btn" onclick="setS('checkTab','modelo')" style="border:none;border-radius:0;padding:8px 20px;font-size:13px;${selTab==='modelo'?'background:var(--text);color:#fff;':''}">⚙ Modelo base</button>
     <button class="btn" onclick="setS('checkTab','cliente')" style="border:none;border-radius:0;border-left:1px solid var(--border);padding:8px 20px;font-size:13px;${selTab==='cliente'?'background:var(--text);color:#fff;':''}">👤 Por cliente</button>
-  </div>
+  </div>`:''}
 
-  ${selTab==='modelo'?`
+  ${isAdmin&&selTab==='modelo'?`
   <div class="card" style="padding:16px;margin-bottom:14px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <div>
-        <div style="font-size:14px;font-weight:500;">Modelo base</div>
-        <div style="font-size:12px;color:var(--text2);margin-top:2px;">${template.length} item(s) — ponto de partida para cada cliente</div>
-      </div>
-      <div style="display:flex;gap:8px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div><div style="font-size:14px;font-weight:500;">Modelo base</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:2px;">${template.length} item(s)</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-w" onclick="seedChecklistTemplate()">⬇ Importar checklist JSR</button>
         <button class="btn btn-p" onclick="openChecklistItemModal()">+ Novo item</button>
       </div>
     </div>
-    ${template.length===0?`<div style="text-align:center;padding:32px;color:var(--text2);font-size:13px;">Nenhum item ainda. Crie os itens padrão.</div>`:''}
+    ${template.length===0?`<div style="text-align:center;padding:32px;color:var(--text2);font-size:13px;">Nenhum item ainda.</div>`:''}
     <div style="display:flex;flex-direction:column;gap:4px;">
       ${template.map((item,i)=>`
         <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);">
           <span style="font-size:13px;color:var(--text3);min-width:20px;">${i+1}</span>
-          <div style="flex:1;">
-            <div style="font-size:13px;font-weight:500;">${item.name}</div>
-            ${item.category?`<div style="font-size:11px;color:var(--text2);">📂 ${item.category}</div>`:''}
-          </div>
+          <div style="flex:1;"><div style="font-size:13px;font-weight:500;">${item.name}</div>
+          ${item.category?`<div style="font-size:11px;color:var(--text2);">📂 ${item.category}</div>`:''}</div>
           <button class="btn btn-i btn-sm" onclick="openChecklistItemModal('${item.id}')">✎</button>
           <button class="btn btn-d btn-sm" onclick="rmChecklistTemplate('${item.id}')">×</button>
         </div>`).join('')}
@@ -2698,42 +2695,40 @@ function renderChecklist(){
     ${template.length>0?`<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
       <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Aplicar modelo a um cliente:</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <select class="inp" id="applyModelCid" style="width:auto;font-size:13px;">
-          <option value="">Selecione o cliente...</option>
-          ${cs.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}
-        </select>
+        <select class="inp" id="applyModelCid" style="width:auto;font-size:13px;"><option value="">Selecione o cliente...</option>${cs.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select>
         <button class="btn btn-p" onclick="applyChecklistModel()">▶ Aplicar modelo</button>
-      </div>
-    </div>`:''}
+      </div></div>`:''}
   </div>
   `:`
-  <!-- ABA POR CLIENTE -->
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
     <select class="inp" style="width:auto;font-size:13px;font-weight:500;" onchange="setS('checkCid',this.value)">
       <option value="">⚠️ Selecione um cliente...</option>
       ${cs.map(c=>`<option value="${c.id}"${selCid===c.id?' selected':''}>${c.name}</option>`).join('')}
     </select>
-    ${selCid&&clientItems.length>0?`
-      <button class="btn btn-sm btn-i" onclick="copyChecklistLink('${selCid}')">🔗 Copiar link de acesso</button>
-      <button class="btn btn-sm btn-p" onclick="exportChecklistPDF('${selCid}')">📄 Relatório PDF</button>
+    ${selCid&&clientItems.length>0&&isAdmin?`
+      <button class="btn btn-sm btn-i" onclick="copyChecklistLink('${selCid}')">🔗 Copiar link</button>
+      <button class="btn btn-sm btn-p" onclick="exportChecklistPDF('${selCid}')">📄 PDF</button>
       ${isLocked
-        ?`<button class="btn btn-sm btn-s" onclick="toggleChecklistLock('${selCid}',false)">🔓 Reabrir checklist</button>
-           <span style="font-size:11px;background:var(--green-bg);color:var(--green-t);padding:3px 10px;border-radius:20px;font-weight:500;">🔒 Concluído</span>`
-        :`<button class="btn btn-sm" style="background:var(--green-bg);color:var(--green-t);border:1px solid var(--green-t);font-weight:500;" onclick="toggleChecklistLock('${selCid}',true)">✅ Concluir e bloquear</button>`
-      }
+        ?`<button class="btn btn-sm btn-s" onclick="toggleChecklistLock('${selCid}',false)">🔓 Reabrir</button><span style="font-size:11px;background:var(--green-bg);color:var(--green-t);padding:3px 10px;border-radius:20px;font-weight:500;">🔒 Concluído</span>`
+        :`<button class="btn btn-sm" style="background:var(--green-bg);color:var(--green-t);border:1px solid var(--green-t);font-weight:500;" onclick="toggleChecklistLock('${selCid}',true)">✅ Concluir e bloquear</button>`}
     `:''}
   </div>
 
   ${!selCid?`<div class="card" style="padding:40px;text-align:center;color:var(--text2);">
     <div style="font-size:32px;margin-bottom:12px;">👆</div>
     <div style="font-size:15px;font-weight:500;margin-bottom:6px;">Selecione um cliente para ver o checklist</div>
+    ${!isAdmin?`<div style="font-size:12px;margin-top:4px;">Você verá apenas os clientes vinculados ao seu perfil.</div>`:''}
   </div>`:`
 
   ${isLocked?`<div style="background:var(--green-bg);border:1px solid var(--green-t);border-radius:var(--r);padding:10px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px;">
     <span style="font-size:18px;">🔒</span>
     <div><div style="font-size:13px;font-weight:500;color:var(--green-t);">Checklist concluído e bloqueado</div>
-    <div style="font-size:11px;color:var(--green-t);">Bloqueado por ${clData?._lockedBy||'?'} em ${clData?._lockedAt?new Date(clData._lockedAt).toLocaleString('pt-BR'):'?'}</div></div>
-    <button class="btn btn-sm" style="margin-left:auto;" onclick="toggleChecklistLock('${selCid}',false)">🔓 Reabrir</button>
+    <div style="font-size:11px;color:var(--green-t);">Por ${clData?._lockedBy||'?'} em ${clData?._lockedAt?new Date(clData._lockedAt).toLocaleString('pt-BR'):'?'}</div></div>
+    ${isAdmin?`<button class="btn btn-sm" style="margin-left:auto;" onclick="toggleChecklistLock('${selCid}',false)">🔓 Reabrir</button>`:''}
+  </div>`:''}
+
+  ${!isAdmin?`<div style="background:var(--blue-bg);border-radius:var(--r);padding:9px 14px;margin-bottom:12px;font-size:12px;color:var(--blue-t);">
+    👁 Você pode marcar os itens. Apenas administradores podem adicionar ou editar itens.
   </div>`:''}
 
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
@@ -2745,51 +2740,61 @@ function renderChecklist(){
 
   <div class="card" style="overflow:hidden;">
     <div style="padding:12px 16px;background:var(--surface2);display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px;">
-      <div style="font-size:13px;font-weight:500;">${gc(selCid)?.name||''} — ${clientItems.length} item(s)</div>
-      ${!isLocked?`<div style="display:flex;gap:6px;">
+      <div>
+        <div style="font-size:13px;font-weight:500;">${gc(selCid)?.name||''} — ${clientItems.length} item(s)</div>
+        ${clData?._type?`<div style="font-size:11px;margin-top:3px;"><span style="background:var(--blue-bg);color:var(--blue-t);padding:2px 9px;border-radius:20px;font-weight:500;">${clData._type}</span></div>`:''}
+      </div>
+      ${canEdit?`<div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <select class="inp" style="font-size:11px;padding:4px 8px;width:auto;" onchange="setChecklistType('${selCid}',this.value)">
+          <option value="">— Tipo de implantação —</option>
+          ${['Nova Empresa','Replicação de Empresa','Nova Filial','Personalizado'].map(t=>`<option value="${t}"${clData?._type===t?' selected':''}>${t}</option>`).join('')}
+        </select>
         <button class="btn btn-sm" onclick="applyChecklistModelTo('${selCid}')">+ Do modelo base</button>
         <button class="btn btn-sm btn-p" onclick="openClientChecklistItemModal('${selCid}')">+ Item personalizado</button>
       </div>`:''}
     </div>
-
-    ${clientItems.length===0?`<div style="padding:32px;text-align:center;color:var(--text2);font-size:13px;">
-      Nenhum item ainda.<br>
-      <button class="btn btn-p" style="margin-top:12px;" onclick="applyChecklistModelTo('${selCid}')">▶ Aplicar modelo base</button>
-    </div>`:''}
-
+    ${clientItems.length===0?`<div style="padding:32px;text-align:center;color:var(--text2);font-size:13px;">Nenhum item ainda.${isAdmin?`<br><button class="btn btn-p" style="margin-top:12px;" onclick="applyChecklistModelTo('${selCid}')">▶ Aplicar modelo base</button>`:''}</div>`:''}
     ${(()=>{
       const grps={};
       clientItems.forEach(item=>{const g=item.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(item);});
-      const gNames=Object.keys(grps).sort();
-      return gNames.map(g=>{
+      // Ordena categorias pelo campo categoryOrder salvo no Firebase
+      const catOrders=clData?._catOrder||{};
+      const gNames=Object.keys(grps).sort((a,b)=>{
+        const oa=catOrders[a.replace(/[^a-z0-9]/gi,'_')]??999;
+        const ob=catOrders[b.replace(/[^a-z0-9]/gi,'_')]??999;
+        return oa-ob||a.localeCompare(b);
+      });
+      return gNames.map((g,gi)=>{
         const gItems=grps[g];
         const gFeito=gItems.filter(i=>i.status==='feito').length;
+        const gKey=g.replace(/[^a-z0-9]/gi,'_');
         return `<div>
           <div style="padding:7px 16px;background:var(--blue-bg);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+            ${canEdit?`<div style="display:flex;gap:2px;flex-shrink:0;">
+              <button onclick="moveCkCategory('${selCid}',${JSON.stringify(gNames)},'${gKey}','up')" style="padding:1px 5px;border:1px solid #b3d4f0;border-radius:4px;background:#d6e8f7;color:var(--blue-t);font-size:11px;cursor:pointer;line-height:1.4;" ${gi===0?'disabled style="opacity:.4;padding:1px 5px;border:1px solid #b3d4f0;border-radius:4px;background:#d6e8f7;color:var(--blue-t);font-size:11px;cursor:not-allowed;line-height:1.4;"':''}>▲</button>
+              <button onclick="moveCkCategory('${selCid}',${JSON.stringify(gNames)},'${gKey}','down')" style="padding:1px 5px;border:1px solid #b3d4f0;border-radius:4px;background:#d6e8f7;color:var(--blue-t);font-size:11px;cursor:pointer;line-height:1.4;" ${gi===gNames.length-1?'disabled style="opacity:.4;padding:1px 5px;border:1px solid #b3d4f0;border-radius:4px;background:#d6e8f7;color:var(--blue-t);font-size:11px;cursor:not-allowed;line-height:1.4;"':''}>▼</button>
+            </div>`:''}
             <span style="font-size:12px;font-weight:600;color:var(--blue-t);">📂 ${g}</span>
             <span style="font-size:11px;color:var(--blue-t);">${gFeito}/${gItems.length}</span>
           </div>
           ${gItems.map(item=>{
-            const locked=isLocked;
-            return `<div style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border);${item.status==='feito'?'background:var(--green-bg);':''}" >
-              <!-- Linha 1: nome + ações admin -->
+            return `<div style="display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border);${item.status==='feito'?'background:var(--green-bg);':''}">
               <div style="display:flex;align-items:flex-start;gap:8px;">
-                ${!locked?`<span class="ck-drag-handle" data-cid="${selCid}" data-id="${item.id}" style="cursor:grab;color:var(--text3);font-size:16px;padding:2px 2px;flex-shrink:0;user-select:none;line-height:1;margin-top:1px;">⠿</span>`:''}
+                ${canEdit?`<span class="ck-drag-handle" data-cid="${selCid}" data-id="${item.id}" style="cursor:grab;color:var(--text3);font-size:16px;padding:2px;flex-shrink:0;user-select:none;line-height:1;margin-top:1px;">⠿</span>`:''}
                 <div style="flex:1;min-width:0;">
                   <div style="font-size:13px;font-weight:500;${item.status==='feito'?'text-decoration:line-through;color:var(--text2);':''}">${item.name}</div>
                   ${item.obs?`<div style="font-size:11px;color:var(--text2);margin-top:2px;">💬 ${item.obs}</div>`:''}
                   ${item.lastBy?`<div style="font-size:10px;color:var(--text3);margin-top:3px;">✏️ ${item.lastBy} · ${item.lastAt?new Date(item.lastAt).toLocaleString('pt-BR'):''}</div>`:''}
                 </div>
-                ${!locked?`<div style="display:flex;gap:4px;flex-shrink:0;">
+                ${canEdit?`<div style="display:flex;gap:4px;flex-shrink:0;">
                   <button class="btn btn-i btn-sm" onclick="openClientChecklistItemModal('${selCid}','${item.id}')">✎</button>
                   <button class="btn btn-d btn-sm" onclick="rmClientChecklistItem('${selCid}','${item.id}')">×</button>
                 </div>`:''}
               </div>
-              <!-- Linha 2: botões de status (largura total, mobile-friendly) -->
               <div style="display:flex;gap:6px;">
                 ${Object.entries(CSTAT).map(([k,v])=>`
-                  <button ${locked?'disabled':''} onclick="setCheckStatus('${selCid}','${item.id}','${k}','${esc(currentProfile?.name||currentProfile?.email||'?')}')"
-                    style="flex:1;padding:7px 4px;border-radius:8px;font-size:12px;font-weight:500;cursor:${locked?'not-allowed':'pointer'};opacity:${locked&&item.status!==k?'.5':'1'};border:1px solid ${item.status===k?'transparent':'var(--border2)'};background:${item.status===k?`var(--${k==='feito'?'green':k==='pendente'?'blue':'red'}-bg)`:'var(--surface2)'};color:${item.status===k?`var(--${k==='feito'?'green':k==='pendente'?'blue':'red'}-t)`:'var(--text3)'};">${v.ic} ${v.l}</button>`).join('')}
+                  <button ${!canMark?'disabled':''} onclick="setCheckStatus('${selCid}','${item.id}','${k}','${esc(currentProfile?.name||currentProfile?.email||'?')}')"
+                    style="flex:1;padding:7px 4px;border-radius:8px;font-size:12px;font-weight:500;cursor:${!canMark?'not-allowed':'pointer'};opacity:${!canMark&&item.status!==k?'.5':'1'};border:1px solid ${item.status===k?'transparent':'var(--border2)'};background:${item.status===k?`var(--${k==='feito'?'green':k==='pendente'?'blue':'red'}-bg)`:'var(--surface2)'};color:${item.status===k?`var(--${k==='feito'?'green':k==='pendente'?'blue':'red'}-t)`:'var(--text3)'};">${v.ic} ${v.l}</button>`).join('')}
               </div>
             </div>`;
           }).join('')}
@@ -2801,8 +2806,43 @@ function renderChecklist(){
   `}`;
 }
 
+window.moveCkCategory=async function(cid,gNames,gKey,dir){
+  // Reconstrói mapa de ordem atual
+  const clData=D.clientChecklists?.[cid]||{};
+  const catOrders=clData._catOrder||{};
+  // Preenche ordens ausentes
+  const orderMap={};
+  gNames.forEach((g,i)=>{
+    const k=g.replace(/[^a-z0-9]/gi,'_');
+    orderMap[k]=catOrders[k]??i;
+  });
+  // Ordena gNames pelo orderMap atual
+  const sorted=[...gNames].sort((a,b)=>{
+    const ka=a.replace(/[^a-z0-9]/gi,'_');
+    const kb=b.replace(/[^a-z0-9]/gi,'_');
+    return orderMap[ka]-orderMap[kb];
+  });
+  const idx=sorted.findIndex(g=>g.replace(/[^a-z0-9]/gi,'_')===gKey);
+  if(idx<0)return;
+  const swapIdx=dir==='up'?idx-1:idx+1;
+  if(swapIdx<0||swapIdx>=sorted.length)return;
+  // Troca as ordens
+  const aKey=sorted[idx].replace(/[^a-z0-9]/gi,'_');
+  const bKey=sorted[swapIdx].replace(/[^a-z0-9]/gi,'_');
+  const aOrd=orderMap[aKey];
+  const bOrd=orderMap[bKey];
+  const updates={};
+  updates[`/clientChecklists/${cid}/_catOrder/${aKey}`]=bOrd;
+  updates[`/clientChecklists/${cid}/_catOrder/${bKey}`]=aOrd;
+  await fbUpdate('/',updates);
+};
+
+window.setChecklistType=async function(cid,type){
+  if(!type)return;
+  await fbUpdate(`/clientChecklists/${cid}`,{_type:type});
+};
+
 window.seedChecklistTemplate=async function(){
-  if(!confirm('Isso vai adicionar todos os itens padrão do checklist JSR ao modelo base. Continuar?'))return;
   const items=[
     // MÓDULO ERP
     {name:'Cadastro de Pessoa',category:'Módulo ERP'},
