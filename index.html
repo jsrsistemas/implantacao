@@ -586,7 +586,7 @@ onAuthStateChanged(auth, user => {
       // Verifica se ainda é o mesmo usuário logado (evita race condition)
       if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
       D = snap.val() || {};
-      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.clientChecklists = D.clientChecklists||{};
+      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.checklistTemplates = D.checklistTemplates||{}; D.clientChecklists = D.clientChecklists||{};
       currentProfile = D.users[user.uid];
       if (!currentProfile) {
         if (Object.keys(D.users).length === 0) {
@@ -2672,33 +2672,66 @@ function renderChecklist(){
   </div>`:''}
 
   ${isAdmin&&selTab==='modelo'?`
-  <div class="card" style="padding:16px;margin-bottom:14px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-      <div><div style="font-size:14px;font-weight:500;">Modelo base</div>
-      <div style="font-size:12px;color:var(--text2);margin-top:2px;">${template.length} item(s)</div></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-w" onclick="seedChecklistTemplate()">⬇ Importar checklist JSR</button>
-        <button class="btn btn-p" onclick="openChecklistItemModal()">+ Novo item</button>
+  <!-- TIPOS DE CHECKLIST -->
+  ${(()=>{
+    const TIPOS=['Nova Empresa','Replicação de Empresa','Nova Filial','Personalizado'];
+    const selTipo=S.checkTipo||'Nova Empresa';
+    const tipoKey=selTipo.toLowerCase().replace(/[^a-z0-9]/gi,'_');
+    const tipoItems=Object.values(D.checklistTemplates?.[tipoKey]||{}).sort((a,b)=>(a.order??999)-(b.order??999)||a.name.localeCompare(b.name));
+    return `
+    <!-- Sub-abas por tipo -->
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px;">
+      ${TIPOS.map(t=>{
+        const k=t.toLowerCase().replace(/[^a-z0-9]/gi,'_');
+        const n=Object.keys(D.checklistTemplates?.[k]||{}).length;
+        return `<button onclick="setS('checkTipo','${t}')" style="padding:6px 14px;border-radius:var(--r);border:2px solid ${selTipo===t?'var(--blue)':'var(--border)'};background:${selTipo===t?'var(--blue-bg)':'var(--surface)'};color:${selTipo===t?'var(--blue-t)':'var(--text2)'};font-size:12px;font-weight:${selTipo===t?'600':'400'};cursor:pointer;">
+          ${t} <span style="font-size:10px;opacity:.7;">(${n})</span>
+        </button>`;
+      }).join('')}
+    </div>
+    <!-- Itens do tipo selecionado -->
+    <div class="card" style="padding:16px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:14px;font-weight:500;">📋 ${selTipo}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px;">${tipoItems.length} item(s) neste template</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-w" onclick="seedChecklistTemplate('${tipoKey}')">⬇ Importar padrão JSR</button>
+          <button class="btn btn-p" onclick="openChecklistItemModal('','${tipoKey}')">+ Novo item</button>
+        </div>
       </div>
-    </div>
-    ${template.length===0?`<div style="text-align:center;padding:32px;color:var(--text2);font-size:13px;">Nenhum item ainda.</div>`:''}
-    <div style="display:flex;flex-direction:column;gap:4px;">
-      ${template.map((item,i)=>`
-        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);">
-          <span style="font-size:13px;color:var(--text3);min-width:20px;">${i+1}</span>
-          <div style="flex:1;"><div style="font-size:13px;font-weight:500;">${item.name}</div>
-          ${item.category?`<div style="font-size:11px;color:var(--text2);">📂 ${item.category}</div>`:''}</div>
-          <button class="btn btn-i btn-sm" onclick="openChecklistItemModal('${item.id}')">✎</button>
-          <button class="btn btn-d btn-sm" onclick="rmChecklistTemplate('${item.id}')">×</button>
-        </div>`).join('')}
-    </div>
-    ${template.length>0?`<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Aplicar modelo a um cliente:</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <select class="inp" id="applyModelCid" style="width:auto;font-size:13px;"><option value="">Selecione o cliente...</option>${cs.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select>
-        <button class="btn btn-p" onclick="applyChecklistModel()">▶ Aplicar modelo</button>
-      </div></div>`:''}
-  </div>
+      ${tipoItems.length===0?`<div style="text-align:center;padding:32px;color:var(--text2);font-size:13px;">
+        Nenhum item ainda neste template.<br>
+        <span style="font-size:12px;">Clique em "+ Novo item" para adicionar ou importe o padrão JSR.</span>
+      </div>`:''}
+      <!-- Agrupa por categoria -->
+      ${(()=>{
+        const grps={};
+        tipoItems.forEach(item=>{const g=item.category||'Geral';if(!grps[g])grps[g]=[];grps[g].push(item);});
+        return Object.keys(grps).sort().map(g=>`
+          <div style="margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:600;color:var(--blue-t);background:var(--blue-bg);padding:5px 12px;border-radius:var(--r);margin-bottom:5px;">📂 ${g} (${grps[g].length})</div>
+            <div style="display:flex;flex-direction:column;gap:3px;">
+              ${grps[g].map((item,i)=>`
+                <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);">
+                  <span style="font-size:12px;color:var(--text3);min-width:18px;">${i+1}</span>
+                  <div style="flex:1;font-size:13px;font-weight:500;">${item.name}</div>
+                  <button class="btn btn-i btn-sm" onclick="openChecklistItemModal('${item.id}','${tipoKey}')">✎</button>
+                  <button class="btn btn-d btn-sm" onclick="rmChecklistTemplate('${item.id}','${tipoKey}')">×</button>
+                </div>`).join('')}
+            </div>
+          </div>`).join('');
+      })()}
+      ${tipoItems.length>0?`<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">Aplicar template <strong>${selTipo}</strong> a um cliente:</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <select class="inp" id="applyModelCid" style="width:auto;font-size:13px;"><option value="">Selecione o cliente...</option>${cs.map(c=>`<option value="${c.id}">${c.name}</option>`).join('')}</select>
+          <button class="btn btn-p" onclick="applyChecklistModel('${tipoKey}','${selTipo}')">▶ Aplicar template</button>
+        </div>
+      </div>`:''}
+    </div>`;
+  })()}
   `:`
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
     <select class="inp" style="width:auto;font-size:13px;font-weight:500;" onchange="setS('checkCid',this.value)">
@@ -2745,11 +2778,10 @@ function renderChecklist(){
         ${clData?._type?`<div style="font-size:11px;margin-top:3px;"><span style="background:var(--blue-bg);color:var(--blue-t);padding:2px 9px;border-radius:20px;font-weight:500;">${clData._type}</span></div>`:''}
       </div>
       ${canEdit?`<div style="display:flex;gap:6px;flex-wrap:wrap;">
-        <select class="inp" style="font-size:11px;padding:4px 8px;width:auto;" onchange="setChecklistType('${selCid}',this.value)">
-          <option value="">— Tipo de implantação —</option>
-          ${['Nova Empresa','Replicação de Empresa','Nova Filial','Personalizado'].map(t=>`<option value="${t}"${clData?._type===t?' selected':''}>${t}</option>`).join('')}
+        <select class="inp" id="ckApplyType" style="font-size:11px;padding:4px 8px;width:auto;">
+          ${['Nova Empresa','Replicação de Empresa','Nova Filial','Personalizado'].map(t=>`<option value="${t.toLowerCase().replace(/[^a-z0-9]/gi,'_')}">${t}</option>`).join('')}
         </select>
-        <button class="btn btn-sm" onclick="applyChecklistModelTo('${selCid}')">+ Do modelo base</button>
+        <button class="btn btn-sm" onclick="applyChecklistModelTo('${selCid}',document.getElementById('ckApplyType').value,document.getElementById('ckApplyType').options[document.getElementById('ckApplyType').selectedIndex].text)">+ Aplicar template</button>
         <button class="btn btn-sm btn-p" onclick="openClientChecklistItemModal('${selCid}')">+ Item personalizado</button>
       </div>`:''}
     </div>
@@ -2842,7 +2874,10 @@ window.setChecklistType=async function(cid,type){
   await fbUpdate(`/clientChecklists/${cid}`,{_type:type});
 };
 
-window.seedChecklistTemplate=async function(){
+window.seedChecklistTemplate=async function(tipoKey){
+  const tk=tipoKey||(S.checkTipo||'Nova Empresa').toLowerCase().replace(/[^a-z0-9]/gi,'_');
+  const tipoNome=S.checkTipo||'Nova Empresa';
+  if(!confirm(`Importar todos os itens padrão JSR no template "${tipoNome}"?\n\nOs itens existentes não serão removidos.`))return;
   const items=[
     // MÓDULO ERP
     {name:'Cadastro de Pessoa',category:'Módulo ERP'},
@@ -2927,13 +2962,15 @@ window.seedChecklistTemplate=async function(){
     const id=gi();
     batch[id]={id,name:item.name,category:item.category,order:i};
   });
-  await fbUpdate('/checklistTemplate',batch);
-  alert(`✅ ${items.length} itens adicionados ao modelo base!`);
+  await fbUpdate(`/checklistTemplates/${tk}`,batch);
+  alert(`✅ ${items.length} itens importados para o template "${tipoNome}"!`);
   render();
 };
-window.openChecklistItemModal=function(id=''){
-  const item=D.checklistTemplate?.[id];
-  const existingCats=[...new Set(Object.values(D.checklistTemplate||{}).map(i=>i.category).filter(Boolean))].sort();
+window.openChecklistItemModal=function(id='',tipoKey=''){
+  const tk=tipoKey||(S.checkTipo||'Nova Empresa').toLowerCase().replace(/[^a-z0-9]/gi,'_');
+  const item=D.checklistTemplates?.[tk]?.[id]||D.checklistTemplate?.[id];
+  const allItems=Object.values(D.checklistTemplates?.[tk]||{});
+  const existingCats=[...new Set(allItems.map(i=>i.category).filter(Boolean))].sort();
   const mbEl=document.getElementById('mb');
   mbEl.style.maxWidth='480px';
   mbEl.innerHTML=`
@@ -2949,27 +2986,30 @@ window.openChecklistItemModal=function(id=''){
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button class="btn" onclick="closeModal()">Cancelar</button>
-        <button class="btn btn-p" onclick="saveChecklistItem('${id}')">Salvar</button>
+        <button class="btn btn-p" onclick="saveChecklistItem('${id}','${tk}')">Salvar</button>
       </div>
     </div>`;
   document.getElementById('ov').classList.add('open');
 };
 
-window.saveChecklistItem=async function(id){
+window.saveChecklistItem=async function(id,tipoKey){
+  const tk=tipoKey||(S.checkTipo||'Nova Empresa').toLowerCase().replace(/[^a-z0-9]/gi,'_');
   const name=document.getElementById('ckName')?.value.trim();
   const category=document.getElementById('ckCat')?.value.trim()||'Geral';
   if(!name)return alert('Informe o nome do item.');
   if(id){
-    await fbUpdate(`/checklistTemplate/${id}`,{name,category});
+    await fbUpdate(`/checklistTemplates/${tk}/${id}`,{name,category});
   } else {
     const newId=gi();
-    await fbSet(`/checklistTemplate/${newId}`,{id:newId,name,category,order:Object.keys(D.checklistTemplate||{}).length});
+    const order=Object.keys(D.checklistTemplates?.[tk]||{}).length;
+    await fbSet(`/checklistTemplates/${tk}/${newId}`,{id:newId,name,category,order});
   }
   closeModal();
 };
 
-window.rmChecklistTemplate=async function(id){
-  if(confirm('Remover este item do modelo base?'))await fbRemove(`/checklistTemplate/${id}`);
+window.rmChecklistTemplate=async function(id,tipoKey){
+  const tk=tipoKey||(S.checkTipo||'Nova Empresa').toLowerCase().replace(/[^a-z0-9]/gi,'_');
+  if(confirm('Remover este item do template?'))await fbRemove(`/checklistTemplates/${tk}/${id}`);
 };
 
 window.openClientChecklistItemModal=function(cid,id=''){
@@ -3131,27 +3171,31 @@ window.exportChecklistPDF=function(cid){
   const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
 };
 
-window.applyChecklistModel=async function(){
+window.applyChecklistModel=async function(tipoKey,tipoNome){
   const cid=document.getElementById('applyModelCid')?.value;
   if(!cid)return alert('Selecione um cliente.');
-  await applyChecklistModelTo(cid);
+  await applyChecklistModelTo(cid,tipoKey,tipoNome);
 };
 
-window.applyChecklistModelTo=async function(cid){
-  const template=Object.values(D.checklistTemplate||{});
-  if(!template.length)return alert('O modelo base está vazio. Adicione itens primeiro na aba "Modelo base".');
+window.applyChecklistModelTo=async function(cid,tipoKey,tipoNome){
+  const tk=tipoKey||(S.checkTipo||'Nova Empresa').toLowerCase().replace(/[^a-z0-9]/gi,'_');
+  const tn=tipoNome||S.checkTipo||'Nova Empresa';
+  const template=Object.values(D.checklistTemplates?.[tk]||{});
+  if(!template.length)return alert('Este template está vazio. Adicione itens primeiro.');
   const existing=D.clientChecklists?.[cid]||{};
-  const existingTemplateIds=new Set(Object.values(existing).map(i=>i.templateId).filter(Boolean));
+  const existingTemplateIds=new Set(Object.values(existing).filter(i=>i.id).map(i=>i.templateId).filter(Boolean));
   const toAdd=template.filter(t=>!existingTemplateIds.has(t.id));
-  if(!toAdd.length)return alert('Todos os itens do modelo já estão no checklist deste cliente.');
-  const baseOrder=Object.keys(existing).length;
+  if(!toAdd.length)return alert('Todos os itens deste template já estão no checklist deste cliente.');
+  const baseOrder=Object.keys(existing).filter(k=>!k.startsWith('_')).length;
   const saves=toAdd.map((t,i)=>{
     const newId=gi();
     return fbSet(`/clientChecklists/${cid}/${newId}`,{id:newId,name:t.name,category:t.category||'Geral',obs:'',status:'pendente',templateId:t.id,order:baseOrder+i});
   });
   await Promise.all(saves);
+  // Salva o tipo no checklist do cliente
+  await fbUpdate(`/clientChecklists/${cid}`,{_type:tn});
   S.checkCid=cid; S.checkTab='cliente'; render();
-  alert(`✅ ${toAdd.length} item(s) adicionados ao checklist!`);
+  alert(`✅ ${toAdd.length} item(s) do template "${tn}" adicionados!`);
 };
 function render(){
   renderSidebar();
