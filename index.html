@@ -3306,7 +3306,8 @@ function renderRoteiro(){
         <button class="btn btn-sm" onclick="rotMesProximo()">▶</button>
         <span style="font-size:12px;color:var(--text2);">${Object.keys(agenda).filter(k=>!agenda[k]?.cont).length} agendados · ${livres.length} restantes</span>
         <button class="btn btn-sm" onclick="exportRotCSV('${selCid}')">⬇ CSV</button>
-        <button class="btn btn-sm btn-i" onclick="imprimirRoteiro('${selCid}')">🖨 Imprimir / PDF</button>
+        <button class="btn btn-sm btn-i" onclick="imprimirRoteiroLista('${selCid}')">🖨 Lista</button>
+        <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase})">📅 Calendário</button>
         `:''}
       </div>
 
@@ -3724,20 +3725,54 @@ window.rotVerDistOrigem=function(id){
   const p=rotOrigens.find(x=>x.id===id);if(!p||!rotMapInst)return;
   const cid=S.rotCid;if(!cid)return;
   const lojas=getRotLojas(cid).filter(l=>l.lat&&l.lng);
-  const dists=lojas.map(l=>({nome:l.nome,km:rotDistKm(p.lat,p.lng,l.lat,l.lng),lat:l.lat,lng:l.lng})).sort((a,b)=>a.km-b.km);
+  const agenda=getRotAgenda(cid);
+  // Associa data agendada a cada loja
+  const lojaDatas={};
+  Object.entries(agenda).forEach(([k,v])=>{if(!v.cont)lojaDatas[v.lojaId]=k;});
+  const dists=lojas.map(l=>({
+    id:l.id,nome:l.nome,cls:l.cls,pdvs:l.pdvs,
+    km:rotDistKm(p.lat,p.lng,l.lat,l.lng),
+    lat:l.lat,lng:l.lng,
+    data:lojaDatas[l.id]?lojaDatas[l.id].split('-').reverse().join('/'):''
+  })).sort((a,b)=>a.km-b.km);
   const maxKm=dists.length?dists[dists.length-1].km:1;
+  const COR_ROT={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+
+  // Desenha linhas coloridas por distância
   dists.forEach(({km,lat,lng})=>{
     const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';
     rotLinhas.push(L.polyline([[p.lat,p.lng],[lat,lng]],{color:cor,weight:2,opacity:.7,dashArray:km>15?'5 4':null}).addTo(rotMapInst));
   });
-  const titulo=document.getElementById('rot-dist-titulo');const body=document.getElementById('rot-dist-body');
-  if(titulo)titulo.textContent=`★ ${p.nome}`;
-  if(body)body.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr>
-    <th style="background:var(--surface2);padding:6px 10px;text-align:left;font-size:10px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);position:sticky;top:0;">Loja</th>
-    <th style="background:var(--surface2);padding:6px 8px;text-align:right;font-size:10px;border-bottom:1px solid var(--border);position:sticky;top:0;">Dist.</th></tr></thead>
-    <tbody>${dists.map(({nome,km})=>{const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';const pct=Math.round((km/maxKm)*100);
-      return `<tr><td style="padding:5px 10px;border-bottom:0.5px solid var(--border);">${nome}</td><td style="padding:5px 8px;border-bottom:0.5px solid var(--border);text-align:right;"><span style="font-family:monospace;font-weight:600;color:${cor};">${km.toFixed(1)}<span style="font-size:9px;color:var(--text3);"> km</span></span><div style="width:40px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:2px;margin-left:auto;"><div style="width:${pct}%;height:4px;background:${cor};border-radius:2px;"></div></div></td></tr>`;
-    }).join('')}</tbody></table>`;
+
+  const titulo=document.getElementById('rot-dist-titulo');
+  const body=document.getElementById('rot-dist-body');
+  if(titulo)titulo.innerHTML=`★ ${p.nome} <span style="font-size:10px;font-weight:400;color:var(--text3);">(${dists.length} lojas)</span>`;
+  if(body)body.innerHTML=`
+    <div style="padding:8px 10px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:10px;color:var(--text3);display:flex;gap:8px;">
+      <span>🟢 &lt;5km</span><span>🟠 5–15km</span><span>🔴 &gt;15km</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <tbody>${dists.map(({nome,cls,pdvs,km,data},i)=>{
+        const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';
+        const pct=Math.round((km/maxKm)*100);
+        const dot=COR_ROT[cls]||'#94A3B8';
+        return `<tr style="${i%2===0?'background:#fff':'background:var(--surface2)'}">
+          <td style="padding:6px 8px;border-bottom:0.5px solid var(--border);width:16px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:${dot};display:inline-block;"></span>
+          </td>
+          <td style="padding:6px 4px;border-bottom:0.5px solid var(--border);">
+            <div style="font-weight:500;">${nome}</div>
+            <div style="font-size:9px;color:var(--text3);">${data?'📅 '+data:'Sem data'}${pdvs?' · '+pdvs+'p':''}</div>
+          </td>
+          <td style="padding:6px 8px;border-bottom:0.5px solid var(--border);text-align:right;white-space:nowrap;">
+            <span style="font-family:monospace;font-weight:700;color:${cor};">${km.toFixed(1)}<span style="font-size:9px;font-weight:400;color:var(--text3);"> km</span></span>
+            <div style="width:44px;height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:2px;margin-left:auto;">
+              <div style="width:${pct}%;height:3px;background:${cor};border-radius:2px;"></div>
+            </div>
+          </td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
   rotMapInst.setView([p.lat,p.lng],12);
 };
 window.rotLimparLinhas=function(){rotLinhas.forEach(l=>l.remove());rotLinhas=[];};
@@ -3759,8 +3794,7 @@ window.rotVerDistancias=function(fromId){
     rotLinhas.push(l);
   });
   const distBody=document.getElementById('rot-dist-body');
-  if(distBody) distBody.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:11px;">
-    <tbody>${dists.map(({nome,km})=>{const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';return`<tr><td style="padding:5px 10px;border-bottom:0.5px solid var(--border);">${nome}</td><td style="padding:5px 8px;border-bottom:0.5px solid var(--border);text-align:right;font-weight:600;color:${cor};font-family:monospace;">${km.toFixed(1)} km</td></tr>`;}).join('')}</tbody></table>`;
+  if(distBody) distBody.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:11px;"><tbody>${dists.map(({nome,km})=>{const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';return`<tr><td style="padding:5px 10px;border-bottom:0.5px solid var(--border);">${nome}</td><td style="padding:5px 8px;border-bottom:0.5px solid var(--border);text-align:right;font-weight:600;color:${cor};font-family:monospace;">${km.toFixed(1)} km</td></tr>`;}).join('')}</tbody></table>`;
 };
 function rotDistKm(la1,ln1,la2,ln2){
   const R=6371,dL=(la2-la1)*Math.PI/180,dG=(ln2-ln1)*Math.PI/180;
@@ -3779,7 +3813,7 @@ window.exportRotCSV=function(cid){
   const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='roteiro.csv';a.click();
 };
-window.imprimirRoteiro=function(cid){
+window.imprimirRoteiroLista=function(cid){
   const c=gc(cid); if(!c)return;
   const agenda=getRotAgenda(cid);
   const lojas=getRotLojas(cid);
@@ -3791,14 +3825,19 @@ window.imprimirRoteiro=function(cid){
   const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
   const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
 
-  // Agrupa por mês
-  const porMes={};
-  Object.entries(agenda).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([k,v])=>{
+  // Junta dias com loja E dias só com obs
+  const todasChaves=new Set([...Object.keys(agenda),...Object.keys(obs)]);
+  const itens=[...todasChaves].sort().map(k=>{
+    const v=agenda[k]; const l=v?lojaMap[v.lojaId]:null;
     const d=new Date(k+'T12:00:00');
-    const mes=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-    if(!porMes[mes])porMes[mes]={label:`${MESES_FULL[d.getMonth()]} ${d.getFullYear()}`,itens:[]};
-    const l=lojaMap[v.lojaId]; if(!l)return;
-    porMes[mes].itens.push({k,d,l,cont:v.cont,obs:obs[k]||''});
+    return {k,d,l,cont:v?.cont||false,ob:obs[k]||''};
+  });
+
+  const porMes={};
+  itens.forEach(it=>{
+    const mes=`${it.d.getFullYear()}-${String(it.d.getMonth()+1).padStart(2,'0')}`;
+    if(!porMes[mes])porMes[mes]={label:`${MESES_FULL[it.d.getMonth()]} ${it.d.getFullYear()}`,itens:[]};
+    porMes[mes].itens.push(it);
   });
 
   const totalLojas=new Set(Object.values(agenda).map(v=>v.lojaId)).size;
@@ -3806,93 +3845,126 @@ window.imprimirRoteiro=function(cid){
 
   const rows=Object.values(porMes).map(({label,itens})=>`
     <tr><td colspan="6" style="background:#1e293b;color:#fff;padding:8px 14px;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">${label}</td></tr>
-    ${itens.map(({k,d,l,cont,obs})=>{
+    ${itens.map(({k,d,l,cont,ob})=>{
       const ds=d.getDay();
-      const bgRow=cont?'#F5F3FF':'#fff';
-      const cor=cont?'#6D28D9':(COR[l.cls]||'#1e293b');
-      const bgChip=cont?'#EDE9FE':(BG[l.cls]||'#f1f5f9');
+      const bgRow=!l?'#FFFBEB':cont?'#F5F3FF':'#fff';
+      const cor=cont?'#6D28D9':l?(COR[l.cls]||'#1e293b'):'#B45309';
+      const bgChip=cont?'#EDE9FE':l?(BG[l.cls]||'#f1f5f9'):'#FFFBEB';
+      const nomeCell=l
+        ?`<span style="background:${bgChip};color:${cor};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">${cont?'↩ Retorno — ':''}${l.nome}</span>`
+        :`<span style="color:#92400e;font-style:italic;font-size:11px;">— sem loja agendada —</span>`;
       return `<tr style="background:${bgRow};">
         <td style="padding:7px 12px;font-size:12px;color:#64748b;white-space:nowrap;border-bottom:1px solid #e2e8f0;">${k.split('-').reverse().join('/')}</td>
         <td style="padding:7px 12px;font-size:12px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">${dias[ds]}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;">
-          <span style="background:${bgChip};color:${cor};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">
-            ${cont?'↩ Retorno — ':''}${l.nome}
-          </span>
-        </td>
-        <td style="padding:7px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:center;">${l.pdvs||'—'}</td>
-        <td style="padding:7px 12px;font-size:11px;border-bottom:1px solid #e2e8f0;">
-          <span style="background:${bgChip};color:${cor};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${cont?'Retorno':l.cls.toUpperCase()}</span>
-        </td>
-        <td style="padding:7px 12px;font-size:11px;color:#92400e;border-bottom:1px solid #e2e8f0;font-style:italic;">${obs?'📝 '+obs:''}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;">${nomeCell}</td>
+        <td style="padding:7px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:center;">${l?.pdvs||'—'}</td>
+        <td style="padding:7px 12px;font-size:11px;border-bottom:1px solid #e2e8f0;">${l?`<span style="background:${bgChip};color:${cor};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${cont?'Retorno':l.cls.toUpperCase()}</span>`:''}</td>
+        <td style="padding:7px 12px;font-size:11px;color:#92400e;border-bottom:1px solid #e2e8f0;font-style:italic;">${ob?'📝 '+ob:''}</td>
       </tr>`;
     }).join('')}`).join('');
 
-  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-  <title>Roteiro de Lojas — ${c.name}</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:Arial,sans-serif;color:#1e293b;padding:32px;background:#fff;}
-    @media print{body{padding:0;}@page{margin:15mm 12mm;size:A4 portrait;}
-      .no-print{display:none!important;}}
-    table{width:100%;border-collapse:collapse;}
-    th{background:#1e293b;color:#fff;padding:9px 12px;text-align:left;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;}
-  </style></head><body>
-
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Roteiro Lista — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:32px;background:#fff;}
+  @media print{body{padding:0;}@page{margin:15mm 12mm;size:A4 portrait;}.no-print{display:none!important;}}
+  table{width:100%;border-collapse:collapse;}th{background:#1e293b;color:#fff;padding:9px 12px;text-align:left;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;}</style></head><body>
   <div class="no-print" style="position:fixed;top:16px;right:16px;display:flex;gap:8px;z-index:999;">
     <button onclick="window.print()" style="padding:10px 20px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">🖨 Imprimir / Salvar PDF</button>
     <button onclick="window.close()" style="padding:10px 16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;cursor:pointer;">✕ Fechar</button>
   </div>
-  <div class="no-print" style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 16px;margin-bottom:20px;font-size:12px;color:#713f12;">
-    💡 Para salvar como PDF: clique em <strong>Imprimir</strong> → em "Destino" escolha <strong>"Salvar como PDF"</strong>
-  </div>
-
-  <!-- CABEÇALHO -->
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #1e293b;">
-    <div>
-      <div style="font-size:10px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:6px;">JSR Sistemas · TrainControl</div>
-      <h1 style="font-size:22px;font-weight:700;color:#1e293b;margin-bottom:4px;">${c.name}</h1>
-      <div style="font-size:14px;color:#64748b;">Roteiro de implantação e visitas</div>
-      <div style="font-size:11px;color:#94a3b8;margin-top:3px;">Gerado em ${today}</div>
-    </div>
+    <div><div style="font-size:10px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:6px;">JSR Sistemas · TrainControl</div>
+    <h1 style="font-size:22px;font-weight:700;margin-bottom:4px;">${c.name}</h1>
+    <div style="font-size:14px;color:#64748b;">Roteiro de implantação — Listagem</div>
+    <div style="font-size:11px;color:#94a3b8;margin-top:3px;">Gerado em ${today}</div></div>
     <div style="text-align:right;background:#f8fafc;border-radius:10px;padding:14px 20px;border:1px solid #e2e8f0;">
-      <div style="font-size:11px;color:#64748b;margin-bottom:4px;">Resumo</div>
-      <div style="font-size:28px;font-weight:700;color:#1e293b;">${totalDias}</div>
-      <div style="font-size:11px;color:#64748b;">visitas agendadas</div>
-      <div style="font-size:13px;font-weight:600;color:#4338CA;margin-top:4px;">${totalLojas} loja(s)</div>
+      <div style="font-size:28px;font-weight:700;">${totalDias}</div><div style="font-size:11px;color:#64748b;">visitas · ${totalLojas} loja(s)</div>
     </div>
   </div>
-
-  <!-- LEGENDA -->
-  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px;">
-    ${[['#4338CA','#EEF2FF','LR — Prioridade'],['#047857','#ECFDF5','SN'],['#B45309','#FFFBEB','Atenção cert.'],['#B91C1C','#FEF2F2','Cert. crítico'],['#6D28D9','#EDE9FE','↩ Retorno']].map(([cor,bg,label])=>
-      `<span style="background:${bg};color:${cor};padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;">${label}</span>`).join('')}
-  </div>
-
-  <!-- TABELA -->
-  <table>
-    <thead><tr>
-      <th style="width:100px;">Data</th>
-      <th style="width:50px;">Dia</th>
-      <th>Loja</th>
-      <th style="width:50px;text-align:center;">PDVs</th>
-      <th style="width:90px;">Regime</th>
-      <th>Observação</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-
-  <div style="margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:10px;color:#94a3b8;text-align:center;">
-    TrainControl · JSR Sistemas · ${today}
-  </div>
-  <script>
-    // Auto-abre o diálogo de impressão após 500ms
-    setTimeout(()=>window.print(), 500);
-  <\/script>
-  </body></html>`;
-
-  const w=window.open('','_blank');
-  if(w){w.document.write(html);w.document.close();}
+  <table><thead><tr>
+    <th style="width:100px;">Data</th><th style="width:50px;">Dia</th><th>Loja</th>
+    <th style="width:50px;text-align:center;">PDVs</th><th style="width:90px;">Regime</th><th>Observação</th>
+  </tr></thead><tbody>${rows}</tbody></table>
+  <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
 };
+
+window.imprimirRoteiroCal=function(cid,mesBase,anoBase){
+  const c=gc(cid);if(!c)return;
+  const agenda=getRotAgenda(cid);
+  const lojas=getRotLojas(cid);
+  const obs=getRotObs(cid);
+  const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
+  const DIAS_CAB=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const MESES_FULL=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+  const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const todasChaves=new Set([...Object.keys(agenda),...Object.keys(obs)]);
+  const mesesSet=new Set();
+  todasChaves.forEach(k=>{const d=new Date(k+'T12:00:00');mesesSet.add(`${d.getFullYear()}-${d.getMonth()}`);});
+  if(!mesesSet.size)mesesSet.add(`${anoBase}-${mesBase}`);
+  const mesesArr=[...mesesSet].sort().map(m=>{const[ano,mes]=m.split('-').map(Number);return{ano,mes};});
+  const totalVisitas=Object.keys(agenda).filter(k=>!agenda[k]?.cont).length;
+  const totalLojas=new Set(Object.values(agenda).map(v=>v.lojaId)).size;
+
+  const calendarios=mesesArr.map(({ano,mes})=>{
+    const prim=new Date(ano,mes,1).getDay();
+    const nDias=new Date(ano,mes+1,0).getDate();
+    let rows='<tr>';
+    let col=0;
+    for(let i=0;i<prim;i++){rows+=`<td style="background:#f8fafc;border:1px solid #e2e8f0;min-height:64px;"></td>`;col++;}
+    for(let d=1;d<=nDias;d++){
+      if(col===7){rows+='</tr><tr>';col=0;}
+      const k=`${ano}-${String(mes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const ds=new Date(ano,mes,d).getDay();
+      const isDom=ds===0||ds===6;
+      const ev=agenda[k];const o=obs[k];const l=ev?lojaMap[ev.lojaId]:null;
+      const cor=ev?(ev.cont?'#6D28D9':(COR[l?.cls]||'#1e293b')):'inherit';
+      const bg=ev?(ev.cont?'#F5F3FF':(BG[l?.cls]||'#fff')):(o?'#FEFCE8':'#fff');
+      rows+=`<td style="vertical-align:top;border:1px solid #e2e8f0;padding:4px 5px;background:${isDom?'#f8fafc':bg};width:14.28%;height:70px;">
+        <div style="font-size:9px;font-weight:700;color:${isDom?'#94a3b8':'#475569'};margin-bottom:3px;">${d}</div>
+        ${l?`<div style="font-size:9px;font-weight:600;color:${cor};line-height:1.3;margin-bottom:1px;">${ev.cont?'↩ ':''}${l.nome}</div>
+        <div style="font-size:8px;color:${cor};opacity:.8;">${ev.cont?'Retorno':l.cls.toUpperCase()}${l.pdvs?' · '+l.pdvs+'p':''}</div>`:''}
+        ${o?`<div style="font-size:8px;color:#92400e;margin-top:2px;line-height:1.3;font-style:italic;">📝 ${o.slice(0,30)}${o.length>30?'…':''}</div>`:''}
+      </td>`;
+      col++;
+    }
+    const rem=(7-col)%7;
+    for(let i=0;i<rem;i++)rows+=`<td style="background:#f8fafc;border:1px solid #e2e8f0;"></td>`;
+    rows+='</tr>';
+    return `<div style="margin-bottom:20px;page-break-inside:avoid;">
+      <div style="font-size:11px;font-weight:700;color:#1e293b;margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid #1e293b;letter-spacing:.08em;text-transform:uppercase;">${MESES_FULL[mes]} ${ano}</div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>${DIAS_CAB.map(d=>`<th style="background:#1e293b;color:#fff;padding:4px 3px;font-size:9px;font-weight:600;text-align:center;">${d}</th>`).join('')}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  });
+
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Calendário — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:24px;background:#fff;}
+  @media print{body{padding:0;}@page{margin:10mm 8mm;size:A4 portrait;}.no-print{display:none!important;}}</style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
+    <button onclick="window.print()" style="padding:8px 16px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;">🖨 Imprimir / PDF</button>
+    <button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #1e293b;">
+    <div><div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:3px;">JSR Sistemas · TrainControl</div>
+    <h1 style="font-size:17px;font-weight:700;">${c.name} — Calendário de Roteiro</h1>
+    <div style="font-size:10px;color:#94a3b8;margin-top:2px;">Gerado em ${today}</div></div>
+    <div style="text-align:right;background:#f8fafc;border-radius:8px;padding:8px 14px;border:1px solid #e2e8f0;">
+      <b style="font-size:18px;">${totalVisitas}</b><div style="font-size:10px;color:#64748b;">visitas · ${totalLojas} lojas</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+    ${[['#4338CA','#EEF2FF','LR'],['#047857','#ECFDF5','SN'],['#B45309','#FFFBEB','Laranja'],['#B91C1C','#FEF2F2','Vermelho'],['#6D28D9','#F5F3FF','↩ Retorno'],['#92400e','#FEFCE8','📝 Obs']].map(([cor,bg,l])=>`<span style="background:${bg};color:${cor};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${l}</span>`).join('')}
+  </div>
+  ${calendarios.join('')}
+  <script>setTimeout(()=>window.print(),600);<\/script></body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
+};
+
+
 
 // ── EVENTS ────────────────────────────────────────────────────────────────
 const q = id => document.getElementById(id)?.value?.trim()||'';
