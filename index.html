@@ -3292,7 +3292,7 @@ function renderRoteiro(){
 
       <!-- Barra de controles -->
       <div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0;">
-        <select class="inp" style="width:auto;font-size:13px;font-weight:500;" onchange="setS('rotCid',this.value)">
+        <select class="inp" style="width:auto;font-size:13px;font-weight:500;" data-action="rotCid">
           <option value="">⚠️ Selecione um cliente...</option>
           ${cs.map(c=>`<option value="${c.id}"${selCid===c.id?' selected':''}>${c.name}</option>`).join('')}
         </select>
@@ -4319,6 +4319,7 @@ document.addEventListener('change',e=>{
   if(e.target.dataset.action==='relCid'){S.relCid=e.target.value;render();}
   if(e.target.dataset.action==='dashCid'){S.dashCid=e.target.value;render();}
   if(e.target.dataset.action==='dashInst'){S.dashInst=e.target.value;render();}
+  if(e.target.dataset.action==='rotCid'){S.rotCid=e.target.value;render();}
   if(e.target.id==='ttSel'){S.ttDay=e.target.value;render();}
 });
 document.getElementById('ov').addEventListener('click',e=>{if(e.target===document.getElementById('ov'))closeModal();});
