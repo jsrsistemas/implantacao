@@ -3306,8 +3306,10 @@ function renderRoteiro(){
         <button class="btn btn-sm" onclick="rotMesProximo()">▶</button>
         <span style="font-size:12px;color:var(--text2);">${Object.keys(agenda).filter(k=>!agenda[k]?.cont).length} agendados · ${livres.length} restantes</span>
         <button class="btn btn-sm" onclick="exportRotCSV('${selCid}')">⬇ CSV</button>
-        <button class="btn btn-sm btn-i" onclick="imprimirRoteiroLista('${selCid}')">🖨 Lista</button>
-        <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase})">📅 Calendário</button>
+        <button class="btn btn-sm btn-i" onclick="imprimirRoteiroLista('${selCid}','portrait')">🖨 Lista Retrato</button>
+        <button class="btn btn-sm btn-i" onclick="imprimirRoteiroLista('${selCid}','landscape')">🖨 Lista Paisagem</button>
+        <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'portrait')">📅 Cal. Retrato</button>
+        <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'landscape')">📅 Cal. Paisagem</button>
         `:''}
       </div>
 
@@ -3976,7 +3978,7 @@ window.exportRotCSV=function(cid){
   const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='roteiro.csv';a.click();
 };
-window.imprimirRoteiroLista=function(cid){
+window.imprimirRoteiroLista=function(cid,orient='portrait'){
   const c=gc(cid); if(!c)return;
   const agenda=getRotAgenda(cid);
   const lojas=getRotLojas(cid);
@@ -4028,10 +4030,10 @@ window.imprimirRoteiroLista=function(cid){
 
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Roteiro Lista — ${c.name}</title>
   <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:32px;background:#fff;}
-  @media print{body{padding:0;}@page{margin:15mm 12mm;size:A4 portrait;}.no-print{display:none!important;}}
+  @media print{body{padding:0;}@page{margin:${orient==='landscape'?'10mm 15mm':'15mm 12mm'};size:A4 ${orient};}.no-print{display:none!important;}}
   table{width:100%;border-collapse:collapse;}th{background:#1e293b;color:#fff;padding:9px 12px;text-align:left;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;}</style></head><body>
   <div class="no-print" style="position:fixed;top:16px;right:16px;display:flex;gap:8px;z-index:999;">
-    <button onclick="window.print()" style="padding:10px 20px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">🖨 Imprimir / Salvar PDF</button>
+    <button onclick="window.print()" style="padding:10px 20px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">🖨 ${orient==='landscape'?'Paisagem':'Retrato'} — Imprimir / PDF</button>
     <button onclick="window.close()" style="padding:10px 16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;cursor:pointer;">✕ Fechar</button>
   </div>
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #1e293b;">
@@ -4051,7 +4053,7 @@ window.imprimirRoteiroLista=function(cid){
   const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
 };
 
-window.imprimirRoteiroCal=function(cid,mesBase,anoBase){
+window.imprimirRoteiroCal=function(cid,mesBase,anoBase,orient='portrait'){
   const c=gc(cid);if(!c)return;
   const agenda=getRotAgenda(cid);
   const lojas=getRotLojas(cid);
@@ -4106,9 +4108,9 @@ window.imprimirRoteiroCal=function(cid,mesBase,anoBase){
 
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Calendário — ${c.name}</title>
   <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:24px;background:#fff;}
-  @media print{body{padding:0;}@page{margin:10mm 8mm;size:A4 portrait;}.no-print{display:none!important;}}</style></head><body>
+  @media print{body{padding:0;}@page{margin:${orient==='landscape'?'8mm 12mm':'10mm 8mm'};size:A4 ${orient};}.no-print{display:none!important;}}</style></head><body>
   <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
-    <button onclick="window.print()" style="padding:8px 16px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;">🖨 Imprimir / PDF</button>
+    <button onclick="window.print()" style="padding:8px 16px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;">🖨 ${orient==='landscape'?'Paisagem':'Retrato'} — Imprimir / PDF</button>
     <button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #1e293b;">
