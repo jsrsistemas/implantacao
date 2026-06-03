@@ -3706,10 +3706,13 @@ function initRoteiroMap(){
   lojas.filter(l=>l.lat&&l.lng).forEach(l=>{
     const isAg=agendadas.has(l.id);
     const cor=isAg?(ROT_COR[l.cls]||'#4338CA'):'#94A3B8';
-    const num=l.nome.match(/\d+/)?.[0]||'●';
+    // Extrai número do nome: "LOJA 01 MATRIZ" → "01", "L19 CENTER" → "19"
+    const numMatch=l.nome.match(/\b(\d{1,2})\b/);
+    const num=numMatch?numMatch[1]:l.nome.slice(0,2).toUpperCase();
+    const fs=num.length<=2?'10px':'8px';
     const icon=L.divIcon({className:'',
-      html:`<div style="background:${cor};color:#fff;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer" title="${l.nome}">${num}</div>`,
-      iconSize:[28,28],iconAnchor:[14,14]});
+      html:`<div style="background:${cor};color:#fff;border:2.5px solid #fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:${fs};font-weight:800;box-shadow:0 2px 8px rgba(0,0,0,.35);cursor:pointer;font-family:Arial,sans-serif;line-height:1;" title="${l.nome}">${num}</div>`,
+      iconSize:[30,30],iconAnchor:[15,15]});
     const m=L.marker([l.lat,l.lng],{icon}).addTo(rotMapInst);
     let dataAg='Sem data';
     Object.entries(agenda).forEach(([k,v])=>{if(v.lojaId===l.id&&!v.cont)dataAg=k.split('-').reverse().join('/');});
