@@ -4,11 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TrainControl — JSR Sistemas</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--bg:#f5f4f0;--surface:#fff;--surface2:#f0efe9;--border:#e0ddd4;--border2:#c8c5ba;--text:#1a1a18;--text2:#6b6a65;--text3:#9b9a95;--blue:#185fa5;--blue-bg:#e6f1fb;--blue-t:#0c447c;--green:#3b6d11;--green-bg:#eaf3de;--green-t:#27500a;--amber:#854f0b;--amber-bg:#faeeda;--amber-t:#633806;--red:#a32d2d;--red-bg:#fcebeb;--red-t:#791f1f;--gray-t:#444441;--gray-bg:#f1efe8;--r:8px;--rl:12px;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
-body::before{content:'🔴 VERSÃO 3.0 - ATUALIZADO';position:fixed;top:0;left:0;right:0;background:red;color:#fff;font-size:14px;font-weight:bold;text-align:center;padding:5px;z-index:9999;font-family:monospace;}
 button{cursor:pointer;font-family:inherit;}
 input,select,textarea{font-family:inherit;}
 ::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
@@ -586,7 +587,7 @@ onAuthStateChanged(auth, user => {
       // Verifica se ainda é o mesmo usuário logado (evita race condition)
       if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
       D = snap.val() || {};
-      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.checklistTemplates = D.checklistTemplates||{}; D.clientChecklists = D.clientChecklists||{};
+      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.checklistTemplates = D.checklistTemplates||{}; D.clientChecklists = D.clientChecklists||{}; D.roteiros = D.roteiros||{};
       currentProfile = D.users[user.uid];
       if (!currentProfile) {
         if (Object.keys(D.users).length === 0) {
@@ -642,7 +643,7 @@ function renderSidebar(){
   ];
   if(p.role==='admin')nav.push({id:'catalogo',ic:'☷',l:'Catálogo'});
   nav.push({id:'checklist',ic:'☑',l:'Checklist'});
-  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
+  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'roteiro',ic:'⊞',l:'Roteiro de Lojas'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
   // Atualiza título na barra mobile
   const cur=nav.find(n=>n.id===S.view);
   const mobTitle=document.getElementById('mob-view-title');
@@ -3206,10 +3207,382 @@ function render(){
   else if(S.view==='catalogo'){ct.innerHTML=renderCatalogo();setTimeout(initCatalogDragDrop,50);}
   else if(S.view==='clientes')ct.innerHTML=renderClientes();
   else if(S.view==='admin')ct.innerHTML=renderAdmin();
+  else if(S.view==='roteiro'){ct.innerHTML=renderRoteiro();setTimeout(initRoteiroMap,80);}
   else if(S.view==='checklist'){ct.innerHTML=renderChecklist();setTimeout(initChecklistDragDrop,50);}
   else if(S.view==='relatorios')ct.innerHTML=renderRelatorios();
 }
-window.render=render;
+// ── ROTEIRO DE LOJAS ────────────────────────────────────────────────────
+const ROT_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const ROT_COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C',nova:'#0369A1'};
+let rotMapInst=null, rotLinhas=[], rotMarcadores={};
+
+function getRot(cid){ return D.roteiros?.[cid]||{}; }
+function getRotLojas(cid){ return Object.values(getRot(cid).lojas||{}); }
+function getRotAgenda(cid){ return getRot(cid).agenda||{}; }
+function getRotBloq(cid){ return Object.keys(getRot(cid).bloqueados||{}); }
+function getRotObs(cid){ return getRot(cid).obs||{}; }
+
+function renderRoteiro(){
+  const cs=myC();
+  const selCid=S.rotCid||'';
+  const rotTab=S.rotTab||'cal';
+  const c=gc(selCid);
+  const lojas=getRotLojas(selCid);
+  const agenda=getRotAgenda(selCid);
+  const bloqSet=new Set(getRotBloq(selCid));
+  const obs=getRotObs(selCid);
+  const agendadas=new Set(Object.values(agenda).map(v=>v.lojaId));
+  const livres=lojas.filter(l=>!agendadas.has(l.id));
+  const now=new Date();
+  const mesBase=S.rotMes??now.getMonth();
+  const anoBase=S.rotAno??now.getFullYear();
+
+  return `
+  <!-- CSS do roteiro -->
+  <style>
+    .rot-chip{font-size:11px;font-weight:500;padding:5px 7px;border-radius:5px;cursor:grab;display:flex;align-items:center;gap:5px;user-select:none;border:1px solid transparent;}
+    .rot-chip:active{cursor:grabbing;transform:scale(.97);}
+    .rot-chip.lr{background:#EEF2FF;color:#4338CA;border-color:#C7D2FE;}
+    .rot-chip.sn{background:#ECFDF5;color:#047857;border-color:#6EE7B7;}
+    .rot-chip.warn{background:#FFFBEB;color:#B45309;border-color:#FCD34D;}
+    .rot-chip.crit{background:#FEF2F2;color:#B91C1C;border-color:#FECACA;}
+    .rot-chip.nova{background:#F0F9FF;color:#0369A1;border-color:#7DD3FC;}
+    .rot-dia{min-height:72px;background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:5px;position:relative;transition:border-color .12s;}
+    .rot-dia.drag-over{border-color:#4338CA!important;background:#F5F3FF!important;border-style:dashed!important;}
+    .rot-dia.bloqueado{background:var(--surface2);border-style:dashed;}
+    .rot-dia.feriado{background:#FFFBEB;}
+    .rot-dia.vazio{background:transparent;border-color:transparent;}
+    .rot-dia.has-chip{border-color:#C9C4BC;}
+  </style>
+
+  <div style="display:flex;height:calc(100vh - 120px);overflow:hidden;">
+
+    <!-- SIDEBAR POOL -->
+    <div style="width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:12px 14px;border-bottom:1px solid var(--border);">
+        <div style="font-size:13px;font-weight:500;">Lojas sem data</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">Arraste para um dia</div>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:10px;">
+        ${!selCid?`<div style="font-size:12px;color:var(--text2);padding:8px 4px;">Selecione um cliente acima</div>`:''}
+        ${selCid&&livres.length===0&&lojas.length>0?`<div style="font-size:11px;color:var(--green-t);background:var(--green-bg);border-radius:var(--r);padding:8px 10px;">✅ Todas as lojas agendadas!</div>`:''}
+        ${livres.map(l=>`
+          <div class="rot-chip ${l.cls}" draggable="true"
+            id="chip-pool-${l.id}"
+            ondragstart="rotDragStart(event,'${l.id}',null)"
+            ondragend="rotDragEnd(event)"
+            style="margin-bottom:5px;">
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.nome}</span>
+            <span style="font-size:9px;opacity:.6;">${l.pdvs>0?l.pdvs+'p':''}</span>
+          </div>`).join('')}
+        <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;">
+        ${selCid?`<button class="btn btn-sm btn-p" style="width:100%;margin-bottom:6px;" onclick="openAddLojaModal('${selCid}')">+ Nova loja</button>`:''}
+        ${lojas.map(l=>`
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--surface2);border-radius:var(--r);margin-bottom:3px;font-size:11px;">
+            <span style="width:8px;height:8px;border-radius:50%;background:${ROT_COR[l.cls]||'#94A3B8'};flex-shrink:0;"></span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.nome}</span>
+            <button onclick="rmRotLoja('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--red);cursor:pointer;font-size:13px;line-height:1;padding:0 2px;">×</button>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- ÁREA PRINCIPAL -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+
+      <!-- Barra de controles -->
+      <div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0;">
+        <select class="inp" style="width:auto;font-size:13px;font-weight:500;" onchange="setS('rotCid',this.value)">
+          <option value="">⚠️ Selecione um cliente...</option>
+          ${cs.map(c=>`<option value="${c.id}"${selCid===c.id?' selected':''}>${c.name}</option>`).join('')}
+        </select>
+        ${selCid?`
+        <div style="display:flex;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;">
+          <button class="btn" onclick="setS('rotTab','cal')" style="border:none;border-radius:0;padding:6px 14px;font-size:12px;${rotTab==='cal'?'background:var(--text);color:#fff;':''}">📅 Calendário</button>
+          <button class="btn" onclick="setS('rotTab','map');setTimeout(initRoteiroMap,100)" style="border:none;border-radius:0;border-left:1px solid var(--border);padding:6px 14px;font-size:12px;${rotTab==='map'?'background:var(--text);color:#fff;':''}">🗺 Mapa</button>
+        </div>
+        <button class="btn btn-sm" onclick="rotMesAnterior()">◀</button>
+        <span style="font-size:13px;font-weight:500;min-width:120px;text-align:center;">${ROT_MESES[mesBase]} ${anoBase}</span>
+        <button class="btn btn-sm" onclick="rotMesProximo()">▶</button>
+        <span style="font-size:12px;color:var(--text2);">${Object.keys(agenda).filter(k=>!agenda[k]?.cont).length} agendados · ${livres.length} restantes</span>
+        <button class="btn btn-sm" onclick="exportRotCSV('${selCid}')">⬇ CSV</button>
+        `:''}
+      </div>
+
+      ${!selCid?`<div class="card" style="margin:20px;padding:40px;text-align:center;color:var(--text2);">
+        <div style="font-size:32px;margin-bottom:12px;">📅</div>
+        <div style="font-size:15px;font-weight:500;">Selecione um cliente para ver o roteiro</div>
+      </div>`:''}
+
+      <!-- CALENDÁRIO -->
+      ${selCid&&rotTab==='cal'?`
+      <div style="flex:1;overflow-y:auto;padding:16px;"
+        ondragover="event.preventDefault()"
+        ondrop="rotDropPool(event)">
+        ${renderRotMes(selCid,anoBase,mesBase,agenda,bloqSet,obs)}
+      </div>`:''}
+
+      <!-- MAPA -->
+      ${selCid&&rotTab==='map'?`
+      <div style="flex:1;display:flex;min-height:0;">
+        <div id="rot-mapa" style="flex:1;min-height:0;"></div>
+        <div style="width:260px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;">Distâncias</div>
+          <div style="flex:1;overflow-y:auto;" id="rot-dist-body">
+            <div style="padding:14px;font-size:11px;color:var(--text3);text-align:center;">Clique em uma loja para ver distâncias</div>
+          </div>
+        </div>
+      </div>`:''}
+    </div>
+  </div>`;
+}
+
+function renderRotMes(cid,ano,mes,agenda,bloqSet,obs){
+  const prim=new Date(ano,mes,1).getDay();
+  const dias=new Date(ano,mes+1,0).getDate();
+  const lojas=getRotLojas(cid);
+  const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
+  let h=`<div style="margin-bottom:24px;">
+    <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;letter-spacing:.08em;text-transform:uppercase;padding-bottom:6px;border-bottom:2px solid var(--border);">${ROT_MESES[mes]} ${ano}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">`;
+  ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].forEach(d=>h+=`<div style="font-size:10px;font-weight:600;color:var(--text3);text-align:center;padding:4px 0;letter-spacing:.04em;text-transform:uppercase;">${d}</div>`);
+  for(let i=0;i<prim;i++)h+=`<div class="rot-dia vazio"></div>`;
+
+  for(let d=1;d<=dias;d++){
+    const key=`${ano}-${String(mes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const ds=new Date(ano,mes,d).getDay();
+    const isDom=ds===0||ds===6;
+    const isBlq=bloqSet.has(key);
+    const ev=agenda[key];
+    const loja=ev?lojaMap[ev.lojaId]:null;
+    let dcls='rot-dia';
+    if(isDom)dcls+=' vazio';
+    else if(isBlq)dcls+=' bloqueado';
+    else if(ev)dcls+=' has-chip';
+
+    const droppable=!isDom&&!isBlq;
+    const drop=droppable?`ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="rotDropDia(event,'${cid}','${key}',this)"`:'';
+
+    h+=`<div class="${dcls}" ${drop}>`;
+    h+=`<div style="font-size:10px;font-weight:600;color:var(--text3);margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;">
+      <span>${d}</span>
+      ${isBlq?`<span style="font-size:8px;background:var(--surface2);border-radius:3px;padding:1px 4px;cursor:pointer;" onclick="rotToggleBloq('${cid}','${key}')">Bloq ×</span>`:''}
+    </div>`;
+
+    if(!isDom&&loja){
+      h+=`<div class="rot-chip ${loja.cls||'lr'}" draggable="true"
+        ondragstart="rotDragStart(event,'${loja.id}','${key}')" ondragend="rotDragEnd(event)"
+        style="margin-bottom:3px;">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${ev.cont?'(cont.) ':''}${loja.nome}</span>
+        <span style="font-size:9px;opacity:.6;">${loja.pdvs>0?loja.pdvs+'p':''}</span>
+      </div>`;
+      if(obs[key])h+=`<div style="font-size:9px;background:#F0F9FF;color:#0369A1;border-radius:3px;padding:2px 5px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="rotAbrirObs('${cid}','${key}','${d}/${mes+1}')">📝 ${obs[key].slice(0,20)}${obs[key].length>20?'…':''}</div>`;
+    }
+
+    if(!isDom){
+      h+=`<div style="display:flex;gap:2px;margin-top:4px;">
+        ${!isBlq?`<button style="font-size:9px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--red);cursor:pointer;" onclick="rotToggleBloq('${cid}','${key}')">🚫</button>`:''}
+        <button style="font-size:9px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--text2);cursor:pointer;" onclick="rotAbrirObs('${cid}','${key}','${d}/${mes+1}')">📝</button>
+        ${ev?`<button style="font-size:9px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:var(--red);cursor:pointer;" onclick="rotRmDia('${cid}','${key}')">×</button>`:''}
+      </div>`;
+    }
+    h+=`</div>`;
+  }
+  const rem=(7-((prim+dias)%7))%7;
+  for(let i=0;i<rem;i++)h+=`<div class="rot-dia vazio"></div>`;
+  h+=`</div></div>`;
+  return h;
+}
+
+// ── Drag & Drop roteiro ──────────────────
+let rotDragLojaId=null, rotDragFrom=null;
+window.rotDragStart=function(e,id,from){
+  rotDragLojaId=id; rotDragFrom=from;
+  requestAnimationFrame(()=>e.target.classList.add('dragging'));
+};
+window.rotDragEnd=function(e){e.target.classList.remove('dragging');rotDragLojaId=null;rotDragFrom=null;};
+window.rotDropPool=async function(e){
+  e.preventDefault();
+  if(!rotDragLojaId||!rotDragFrom)return;
+  const cid=S.rotCid; if(!cid)return;
+  await fbRemove(`/roteiros/${cid}/agenda/${rotDragFrom}`);
+};
+window.rotDropDia=async function(e,cid,key,el){
+  e.preventDefault(); e.stopPropagation();
+  if(el)el.classList.remove('drag-over');
+  if(!rotDragLojaId)return;
+  const ag=getRotAgenda(cid);
+  if(ag[key]&&ag[key].lojaId!==rotDragLojaId){
+    if(!confirm('Este dia já tem uma loja. Substituir?'))return;
+  }
+  const updates={};
+  if(rotDragFrom) updates[`/roteiros/${cid}/agenda/${rotDragFrom}`]=null;
+  updates[`/roteiros/${cid}/agenda/${key}`]={lojaId:rotDragLojaId,cont:false};
+  await fbUpdate('/',updates);
+};
+
+// ── Ações roteiro ────────────────────────
+window.rotToggleBloq=async function(cid,key){
+  const isBlq=getRot(cid).bloqueados?.[key];
+  if(isBlq) await fbRemove(`/roteiros/${cid}/bloqueados/${key}`);
+  else await fbSet(`/roteiros/${cid}/bloqueados/${key}`,true);
+};
+window.rotRmDia=async function(cid,key){
+  await fbRemove(`/roteiros/${cid}/agenda/${key}`);
+};
+window.rotAbrirObs=function(cid,key,label){
+  const obs=getRot(cid).obs?.[key]||'';
+  const mbEl=document.getElementById('mb');
+  mbEl.style.maxWidth='460px';
+  mbEl.innerHTML=`
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <h3 style="font-size:15px;font-weight:500;">📝 Observação — ${label}</h3>
+      <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:10px;">
+      <textarea class="inp" id="rotObsTxt" rows="3" style="resize:vertical;">${esc(obs)}</textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-p" onclick="rotSalvarObs('${cid}','${key}')">Salvar</button>
+      </div>
+    </div>`;
+  document.getElementById('ov').classList.add('open');
+};
+window.rotSalvarObs=async function(cid,key){
+  const v=document.getElementById('rotObsTxt')?.value.trim();
+  if(v) await fbSet(`/roteiros/${cid}/obs/${key}`,v);
+  else await fbRemove(`/roteiros/${cid}/obs/${key}`);
+  closeModal();
+};
+window.rotMesAnterior=function(){
+  let m=(S.rotMes??new Date().getMonth())-1;
+  let a=S.rotAno??new Date().getFullYear();
+  if(m<0){m=11;a--;}
+  S.rotMes=m;S.rotAno=a;render();
+};
+window.rotMesProximo=function(){
+  let m=(S.rotMes??new Date().getMonth())+1;
+  let a=S.rotAno??new Date().getFullYear();
+  if(m>11){m=0;a++;}
+  S.rotMes=m;S.rotAno=a;render();
+};
+
+// ── CRUD Lojas do roteiro ────────────────
+window.openAddLojaModal=function(cid){
+  const mbEl=document.getElementById('mb');
+  mbEl.style.maxWidth='460px';
+  mbEl.innerHTML=`
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <h3 style="font-size:15px;font-weight:500;">🏪 Adicionar loja ao roteiro</h3>
+      <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+      <div><label class="lbl">Nome da loja</label><input class="inp" id="rotLojaNome" placeholder="Ex: L01 Centro"></div>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;"><label class="lbl">PDVs</label><input type="number" class="inp" id="rotLojaPdvs" value="3" min="0" max="50"></div>
+        <div style="flex:2;"><label class="lbl">Regime</label>
+          <select class="inp" id="rotLojaCls">
+            <option value="lr">LR — prioridade</option>
+            <option value="sn">SN</option>
+            <option value="warn">Laranja — atenção cert.</option>
+            <option value="crit">Vermelho — cert. crítico</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;"><label class="lbl">Lat (opcional)</label><input class="inp" id="rotLojaLat" placeholder="-23.5937"></div>
+        <div style="flex:1;"><label class="lbl">Lng (opcional)</label><input class="inp" id="rotLojaLng" placeholder="-46.4885"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-p" onclick="rotSalvarLoja('${cid}')">Adicionar</button>
+      </div>
+    </div>`;
+  document.getElementById('ov').classList.add('open');
+};
+window.rotSalvarLoja=async function(cid){
+  const nome=document.getElementById('rotLojaNome')?.value.trim();
+  const pdvs=parseInt(document.getElementById('rotLojaPdvs')?.value)||0;
+  const cls=document.getElementById('rotLojaCls')?.value||'lr';
+  const lat=parseFloat(document.getElementById('rotLojaLat')?.value)||null;
+  const lng=parseFloat(document.getElementById('rotLojaLng')?.value)||null;
+  if(!nome)return alert('Informe o nome da loja.');
+  const id=gi();
+  await fbSet(`/roteiros/${cid}/lojas/${id}`,{id,nome,pdvs,cls,lat,lng});
+  closeModal();
+};
+window.rmRotLoja=async function(cid,id){
+  if(!confirm('Remover esta loja do roteiro? Os agendamentos dela também serão removidos.'))return;
+  const ag=getRotAgenda(cid);
+  const updates={[`/roteiros/${cid}/lojas/${id}`]:null};
+  Object.entries(ag).forEach(([k,v])=>{if(v.lojaId===id)updates[`/roteiros/${cid}/agenda/${k}`]=null;});
+  await fbUpdate('/',updates);
+};
+
+// ── Mapa do roteiro ──────────────────────
+function initRoteiroMap(){
+  if(S.rotTab!=='map')return;
+  const mapEl=document.getElementById('rot-mapa');
+  if(!mapEl)return;
+  if(rotMapInst){rotMapInst.remove();rotMapInst=null;}
+  rotMapInst=L.map('rot-mapa',{center:[-23.57,-46.55],zoom:11});
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{
+    attribution:'© OpenStreetMap © CARTO',maxZoom:19}).addTo(rotMapInst);
+  const cid=S.rotCid; if(!cid)return;
+  const lojas=getRotLojas(cid);
+  const agenda=getRotAgenda(cid);
+  const agendadas=new Set(Object.values(agenda).map(v=>v.lojaId));
+  rotMarcadores={};
+  lojas.filter(l=>l.lat&&l.lng).forEach(l=>{
+    const isAg=agendadas.has(l.id);
+    const cor=isAg?(ROT_COR[l.cls]||'#4338CA'):'#94A3B8';
+    const icon=L.divIcon({className:'',
+      html:`<div style="background:${cor};color:#fff;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer">${l.pdvs||'?'}</div>`,
+      iconSize:[28,28],iconAnchor:[14,14]});
+    const m=L.marker([l.lat,l.lng],{icon}).addTo(rotMapInst);
+    let dataAg='Sem data';
+    Object.entries(agenda).forEach(([k,v])=>{if(v.lojaId===l.id&&!v.cont)dataAg=k.split('-').reverse().join('/');});
+    m.bindPopup(`<div style="font-family:sans-serif;min-width:150px;"><b style="font-size:13px;">${l.nome}</b><br><span style="font-size:11px;color:#666;">PDVs: ${l.pdvs||'—'} · Data: ${dataAg}</span>
+      <br><button onclick="rotVerDistancias('${l.id}')" style="margin-top:8px;width:100%;font-size:11px;padding:5px;border:1px solid #ddd;border-radius:5px;background:#f5f5f5;cursor:pointer;">📍 Ver distâncias</button></div>`);
+    m.on('click',()=>rotVerDistancias(l.id));
+    rotMarcadores[l.id]=m;
+  });
+}
+window.rotVerDistancias=function(fromId){
+  rotLinhas.forEach(l=>l.remove());rotLinhas=[];
+  const cid=S.rotCid; if(!cid)return;
+  const lojas=getRotLojas(cid);
+  const origem=lojas.find(l=>l.id===fromId);
+  if(!origem||!origem.lat)return;
+  const dists=lojas.filter(l=>l.id!==fromId&&l.lat&&l.lng).map(l=>({
+    nome:l.nome,km:rotDistKm(origem.lat,origem.lng,l.lat,l.lng),lat:l.lat,lng:l.lng
+  })).sort((a,b)=>a.km-b.km);
+  const maxKm=dists.length?dists[dists.length-1].km:1;
+  dists.forEach(({km,lat,lng})=>{
+    const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';
+    const l=L.polyline([[origem.lat,origem.lng],[lat,lng]],{color:cor,weight:2,opacity:.7}).addTo(rotMapInst);
+    rotLinhas.push(l);
+  });
+  const distBody=document.getElementById('rot-dist-body');
+  if(distBody) distBody.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:11px;">
+    <tbody>${dists.map(({nome,km})=>{const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';return`<tr><td style="padding:5px 10px;border-bottom:0.5px solid var(--border);">${nome}</td><td style="padding:5px 8px;border-bottom:0.5px solid var(--border);text-align:right;font-weight:600;color:${cor};font-family:monospace;">${km.toFixed(1)} km</td></tr>`;}).join('')}</tbody></table>`;
+};
+function rotDistKm(la1,ln1,la2,ln2){
+  const R=6371,dL=(la2-la1)*Math.PI/180,dG=(ln2-ln1)*Math.PI/180;
+  const a=Math.sin(dL/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dG/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+window.exportRotCSV=function(cid){
+  const agenda=getRotAgenda(cid);const lojas=getRotLojas(cid);const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
+  const rows=[['Data','DiaSemana','Loja','PDVs','Regime','Continuação']];
+  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  Object.entries(agenda).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([k,v])=>{
+    const l=lojaMap[v.lojaId];if(!l)return;
+    const d=new Date(k+'T12:00:00');
+    rows.push([k,dias[d.getDay()],l.nome,l.pdvs,l.cls.toUpperCase(),v.cont?'Sim':'Não']);
+  });
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='roteiro.csv';a.click();
+};
 window.setS=(key,val)=>{S[key]=val;render();};
 
 // ── EVENTS ────────────────────────────────────────────────────────────────
