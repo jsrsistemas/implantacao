@@ -3298,8 +3298,8 @@ function renderRoteiro(){
         </select>
         ${selCid?`
         <div style="display:flex;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;">
-          <button class="btn" onclick="setS('rotTab','cal')" style="border:none;border-radius:0;padding:6px 14px;font-size:12px;${rotTab==='cal'?'background:var(--text);color:#fff;':''}">📅 Calendário</button>
-          <button class="btn" onclick="setS('rotTab','map');setTimeout(initRoteiroMap,100)" style="border:none;border-radius:0;border-left:1px solid var(--border);padding:6px 14px;font-size:12px;${rotTab==='map'?'background:var(--text);color:#fff;':''}">🗺 Mapa</button>
+          <button class="btn" onclick="rotMudarAba('cal')" style="border:none;border-radius:0;padding:6px 14px;font-size:12px;${rotTab==='cal'?'background:var(--text);color:#fff;':''}">📅 Calendário</button>
+          <button class="btn" onclick="rotMudarAba('map')" style="border:none;border-radius:0;border-left:1px solid var(--border);padding:6px 14px;font-size:12px;${rotTab==='map'?'background:var(--text);color:#fff;':''}">🗺 Mapa</button>
         </div>
         <button class="btn btn-sm" onclick="rotMesAnterior()">◀</button>
         <span style="font-size:13px;font-weight:500;min-width:120px;text-align:center;">${ROT_MESES[mesBase]} ${anoBase}</span>
@@ -3367,8 +3367,8 @@ function renderRoteiro(){
       </div>
 
       <!-- MAPA + PAINEL -->
-      <div style="flex:1;display:flex;min-height:0;">
-        <div id="rot-mapa" style="flex:1;min-height:0;"></div>
+      <div style="flex:1;display:flex;min-height:0;overflow:hidden;">
+        <div id="rot-mapa" style="flex:1;height:100%;min-height:300px;"></div>
 
         <!-- Painel lateral: distâncias / roteiro -->
         <div style="width:280px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
@@ -3669,11 +3669,32 @@ window.rmRotLoja=async function(cid,id){
 };
 
 // ── Mapa do roteiro ──────────────────────
+window.rotMudarAba=function(aba){
+  S.rotTab=aba;
+  render();
+  if(aba==='map'){
+    // Aguarda o DOM atualizar antes de iniciar o mapa
+    setTimeout(()=>{
+      const el=document.getElementById('rot-mapa');
+      if(!el)return;
+      if(rotMapInst){
+        rotMapInst.invalidateSize();
+        return;
+      }
+      initRoteiroMap();
+    },150);
+  }
+};
+
 function initRoteiroMap(){
-  if(S.rotTab!=='map')return;
   const mapEl=document.getElementById('rot-mapa');
   if(!mapEl)return;
-  if(rotMapInst){rotMapInst.remove();rotMapInst=null;}
+  // Destrói instância anterior se existir
+  if(rotMapInst){
+    try{rotMapInst.remove();}catch(e){}
+    rotMapInst=null;
+  }
+  rotLinhas=[];
   rotMapInst=L.map('rot-mapa',{center:[-23.57,-46.55],zoom:11});
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{
     attribution:'© OpenStreetMap © CARTO',maxZoom:19}).addTo(rotMapInst);
