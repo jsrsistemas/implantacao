@@ -3393,12 +3393,18 @@ function renderRotMes(cid,ano,mes,agenda,bloqSet,obs){
     </div>`;
 
     if(!isDom&&loja){
-      h+=`<div class="rot-chip ${loja.cls||'lr'}" draggable="true"
+      const chipStyle=ev.cont?`background:#F5F3FF;color:#6D28D9;border:1.5px solid #C4B5FD;font-style:italic;`:``;
+      const chipCls=ev.cont?'':loja.cls||'lr';
+      h+=`<div class="rot-chip ${chipCls}" draggable="true"
         ondragstart="rotDragStart(event,'${loja.id}','${key}')" ondragend="rotDragEnd(event)"
-        style="margin-bottom:3px;">
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${ev.cont?'(cont.) ':''}${loja.nome}</span>
-        <span style="font-size:9px;opacity:.6;">${loja.pdvs>0?loja.pdvs+'p':''}</span>
+        style="margin-bottom:3px;${chipStyle}">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${ev.cont?'↩ ':''}${loja.nome}</span>
+        <span style="font-size:9px;opacity:.6;">${ev.cont?'retorno':loja.pdvs>0?loja.pdvs+'p':''}</span>
       </div>`;
+      if(!ev.cont){
+        h+=`<button onclick="rotAdicionarContinuacao('${cid}','${loja.id}','${key}')"
+          style="font-size:9px;padding:2px 6px;border:1px dashed #C4B5FD;border-radius:3px;background:#F5F3FF;color:#6D28D9;cursor:pointer;width:100%;margin-bottom:3px;text-align:left;">↩ + Retornar</button>`;
+      }
     }
 
     if(!isDom){
@@ -3435,13 +3441,65 @@ window.rotDropDia=async function(e,cid,key,el){
   if(el)el.classList.remove('drag-over');
   if(!rotDragLojaId)return;
   const ag=getRotAgenda(cid);
+
+  // Se o dia destino já tem outra loja
   if(ag[key]&&ag[key].lojaId!==rotDragLojaId){
-    if(!confirm('Este dia já tem uma loja. Substituir?'))return;
+    if(!confirm('Este dia já tem uma loja agendada. Substituir?'))return;
   }
+
+  // Se a loja já está agendada em outro dia, pergunta: mover ou retornar?
+  const jaAgendada=rotDragFrom&&ag[rotDragFrom]?.lojaId===rotDragLojaId;
+  let isCont=false;
+  if(jaAgendada){
+    const resp=confirm(`"${getRotLojas(cid).find(l=>l.id===rotDragLojaId)?.nome||'Loja'}"\n\nO que deseja fazer?\n\n✅ OK = Mover para este dia\n❌ Cancelar = Adicionar como RETORNO (mantém o dia original)`);
+    if(!resp) isCont=true; // cancelar = retorno/continuação
+  }
+
   const updates={};
-  if(rotDragFrom) updates[`/roteiros/${cid}/agenda/${rotDragFrom}`]=null;
-  updates[`/roteiros/${cid}/agenda/${key}`]={lojaId:rotDragLojaId,cont:false};
+  if(!isCont&&rotDragFrom) updates[`/roteiros/${cid}/agenda/${rotDragFrom}`]=null;
+  updates[`/roteiros/${cid}/agenda/${key}`]={lojaId:rotDragLojaId,cont:isCont};
   await fbUpdate('/',updates);
+};
+
+window.rotAdicionarContinuacao=function(cid,lojaId,fromKey){
+  // Abre modal para escolher o dia de retorno
+  const rot=getRot(cid);
+  const bloqSet=new Set(Object.keys(rot.bloqueados||{}));
+  const ag=rot.agenda||{};
+  const loja=getRotLojas(cid).find(l=>l.id===lojaId);
+  const mbEl=document.getElementById('mb');
+  mbEl.style.maxWidth='420px';
+  mbEl.innerHTML=`
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <h3 style="font-size:15px;font-weight:500;">↩ Retornar — ${loja?.nome||''}</h3>
+      <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+      <div style="background:var(--surface2);border-radius:var(--r);padding:10px 12px;font-size:12px;color:var(--text2);">
+        Escolha o dia para adicionar um <strong>retorno</strong> a esta loja.<br>
+        O dia original será mantido; o retorno aparece em <span style="color:#6D28D9;font-weight:500;">roxo itálico</span>.
+      </div>
+      <div>
+        <label class="lbl">Data do retorno</label>
+        <input type="date" class="inp" id="rotContData" min="${fromKey}">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn" style="background:#F5F3FF;color:#6D28D9;border-color:#C4B5FD;" onclick="rotSalvarContinuacao('${cid}','${lojaId}')">↩ Confirmar retorno</button>
+      </div>
+    </div>`;
+  document.getElementById('ov').classList.add('open');
+};
+
+window.rotSalvarContinuacao=async function(cid,lojaId){
+  const data=document.getElementById('rotContData')?.value;
+  if(!data)return alert('Selecione uma data.');
+  const ag=getRotAgenda(cid);
+  if(ag[data]&&ag[data].lojaId!==lojaId){
+    if(!confirm('Este dia já tem outra loja. Substituir?'))return;
+  }
+  await fbSet(`/roteiros/${cid}/agenda/${data}`,{lojaId,cont:true});
+  closeModal();
 };
 
 // ── Ações roteiro ────────────────────────
