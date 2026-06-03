@@ -3326,35 +3326,64 @@ function renderRoteiro(){
 
       <!-- MAPA -->
       ${selCid&&rotTab==='map'?`
-      <!-- Painel ponto de partida -->
+      <!-- Painel ponto de partida + roteiro -->
       <div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;flex-shrink:0;">
-        <div style="display:flex;flex-direction:column;gap:6px;min-width:280px;">
-          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;">📍 Ponto de partida</div>
+
+        <!-- Coluna: adicionar ponto de partida -->
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:300px;">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;">📍 Ponto de partida (meu endereço / técnico)</div>
           <div style="display:flex;gap:6px;">
-            <input id="rotOrigNome" placeholder="Nome (ex: JSR, Casa...)" class="inp" style="width:100px;font-size:11px;padding:5px 8px;">
+            <input id="rotOrigNome" placeholder="Nome (ex: JSR, Casa, Técnico João)" class="inp" style="width:130px;font-size:11px;padding:5px 8px;">
             <input id="rotOrigEnd" placeholder="Endereço completo..." class="inp" style="flex:1;font-size:11px;padding:5px 8px;"
               onkeydown="if(event.key==='Enter')rotAdicionarOrigem()">
-            <button class="btn btn-sm btn-p" onclick="rotAdicionarOrigem()" id="rotOrigBtn">Buscar</button>
+            <button class="btn btn-sm btn-p" onclick="rotAdicionarOrigem()" id="rotOrigBtn">🔍 Buscar</button>
           </div>
           <div id="rotOrigStatus" style="font-size:11px;color:var(--text3);min-height:14px;"></div>
         </div>
-        <div style="display:flex;flex-direction:column;gap:6px;flex:1;">
+
+        <!-- Divider -->
+        <div style="width:1px;background:var(--border);align-self:stretch;flex-shrink:0;"></div>
+
+        <!-- Coluna: pontos salvos + montar roteiro -->
+        <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:200px;">
           <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;">Pontos salvos</div>
-          <div id="rotOrigemList" style="display:flex;gap:5px;flex-wrap:wrap;min-height:28px;align-items:center;">
+          <div id="rotOrigemList" style="display:flex;gap:5px;flex-wrap:wrap;min-height:24px;align-items:center;">
             <span style="font-size:11px;color:var(--text3);">Nenhum ponto ainda</span>
           </div>
         </div>
-        <div style="display:flex;gap:5px;align-items:flex-end;">
-          <button class="btn btn-sm" onclick="rotMostrarTodas('${selCid}')">Todas</button>
-          <button class="btn btn-sm" onclick="rotLimparLinhas()">Limpar linhas</button>
+
+        <!-- Divider -->
+        <div style="width:1px;background:var(--border);align-self:stretch;flex-shrink:0;"></div>
+
+        <!-- Coluna: ações do mapa -->
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;">Visualização</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="rotMostrarTodas('${selCid}')">Todas as lojas</button>
+            <button class="btn btn-sm" onclick="rotLimparLinhas()">Limpar linhas</button>
+            <button class="btn btn-sm btn-p" onclick="rotMontarRoteiro('${selCid}')">🗺 Montar roteiro</button>
+          </div>
         </div>
       </div>
+
+      <!-- MAPA + PAINEL -->
       <div style="flex:1;display:flex;min-height:0;">
         <div id="rot-mapa" style="flex:1;min-height:0;"></div>
-        <div style="width:260px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
-          <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;" id="rot-dist-titulo">Distâncias</div>
+
+        <!-- Painel lateral: distâncias / roteiro -->
+        <div style="width:280px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;display:flex;justify-content:space-between;align-items:center;" id="rot-dist-titulo">
+            Distâncias
+          </div>
           <div style="flex:1;overflow-y:auto;" id="rot-dist-body">
-            <div style="padding:14px;font-size:11px;color:var(--text3);text-align:center;line-height:1.7;">Clique em uma loja<br>ou ponto de partida<br>para ver as distâncias</div>
+            <div style="padding:16px 12px;font-size:11px;color:var(--text3);text-align:center;line-height:1.8;">
+              <div style="font-size:24px;margin-bottom:8px;">📍</div>
+              <strong>Como usar:</strong><br>
+              1. Digite o endereço de partida<br>
+              2. Clique em 🔍 Buscar<br>
+              3. Clique em <strong>🗺 Montar roteiro</strong><br>
+              ou clique num ponto ★ salvo
+            </div>
           </div>
         </div>
       </div>`:''}
@@ -3778,11 +3807,118 @@ window.rotVerDistOrigem=function(id){
 window.rotLimparLinhas=function(){rotLinhas.forEach(l=>l.remove());rotLinhas=[];};
 window.rotMostrarTodas=function(){rotLinhas.forEach(l=>l.remove());rotLinhas=[];if(rotMapInst){initRoteiroMap();rotMapInst.setView([-23.57,-46.55],11);}};
 
+window.rotMontarRoteiro=function(cid){
+  if(!rotMapInst)return alert('Abra o mapa primeiro.');
+  if(!rotOrigens.length)return alert('Adicione um ponto de partida primeiro.\n\nDigite o endereço acima e clique em 🔍 Buscar.');
+  const origem=rotOrigens[0]; // usa o primeiro ponto salvo
+  const lojas=getRotLojas(cid).filter(l=>l.lat&&l.lng);
+  if(!lojas.length)return alert('Nenhuma loja com endereço cadastrado.\n\nEdite as lojas e adicione o endereço para geocodificar.');
+
+  rotLinhas.forEach(l=>l.remove()); rotLinhas=[];
+
+  const agenda=getRotAgenda(cid);
+  const mes=S.rotMes??new Date().getMonth();
+  const ano=S.rotAno??new Date().getFullYear();
+  const mesStr=`${ano}-${String(mes+1).padStart(2,'0')}`;
+
+  // Lojas agendadas no mês atual com coordenadas
+  const lojasNoMes=Object.entries(agenda)
+    .filter(([k,v])=>k.startsWith(mesStr)&&!v.cont)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .map(([k,v])=>{
+      const l=lojas.find(x=>x.id===v.lojaId);
+      return l?{...l,data:k,dataFmt:k.split('-').reverse().join('/')}:null;
+    }).filter(Boolean);
+
+  // Se não há lojas agendadas no mês, usa todas com coordenadas por distância
+  const paradas=lojasNoMes.length>0
+    ? lojasNoMes
+    : [...lojas].sort((a,b)=>rotDistKm(origem.lat,origem.lng,a.lat,a.lng)-rotDistKm(origem.lat,origem.lng,b.lat,b.lng));
+
+  if(!paradas.length)return alert('Nenhuma loja com coordenadas para montar o roteiro.');
+
+  const COR_ROT={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+  const DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  // Calcula distâncias: origem → loja1 → loja2 → ... 
+  let pontos=[{lat:origem.lat,lng:origem.lng,nome:`★ ${origem.nome}`,tipo:'origem'}];
+  paradas.forEach(l=>pontos.push({lat:l.lat,lng:l.lng,nome:l.nome,tipo:'loja',loja:l}));
+
+  let totalKm=0;
+  const segmentos=[];
+  for(let i=0;i<pontos.length-1;i++){
+    const de=pontos[i], ate=pontos[i+1];
+    const km=rotDistKm(de.lat,de.lng,ate.lat,ate.lng);
+    totalKm+=km;
+    segmentos.push({de,ate,km,idx:i});
+    const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';
+    const line=L.polyline([[de.lat,de.lng],[ate.lat,ate.lng]],{
+      color:cor,weight:3,opacity:.85
+    }).addTo(rotMapInst);
+    // Seta no meio da linha
+    line.bindTooltip(`${i===0?'Saída':'Trecho '+(i+1)}: ${km.toFixed(1)} km`,{sticky:true});
+    rotLinhas.push(line);
+  }
+
+  // Numeração nas lojas
+  paradas.forEach((l,i)=>{
+    const icon=L.divIcon({className:'',
+      html:`<div style="background:${COR_ROT[l.cls]||'#4338CA'};color:#fff;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.3);">${i+1}</div>`,
+      iconSize:[28,28],iconAnchor:[14,14]});
+    const m=L.marker([l.lat,l.lng],{icon,zIndexOffset:500}).addTo(rotMapInst);
+    m.bindPopup(`<div style="font-family:sans-serif;min-width:140px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:4px;">${i+1}. ${l.nome}</div>
+      <div style="font-size:11px;color:#666;">${l.data?DIAS[new Date(l.data+'T12:00').getDay()]+' '+l.dataFmt:''}</div>
+      <div style="font-size:11px;color:#666;">PDVs: ${l.pdvs||'—'} · ${l.cls.toUpperCase()}</div>
+    </div>`).openPopup();
+    rotLinhas.push(m);
+  });
+
+  // Fit mapa
+  const allPts=[[origem.lat,origem.lng],...paradas.map(l=>[l.lat,l.lng])];
+  rotMapInst.fitBounds(allPts,{padding:[32,32]});
+
+  // Painel lateral: roteiro sequencial
+  const titulo=document.getElementById('rot-dist-titulo');
+  const body=document.getElementById('rot-dist-body');
+  if(titulo)titulo.innerHTML=`🗺 Roteiro — ${ROT_MESES[mes]} ${ano}`;
+  if(body)body.innerHTML=`
+    <div style="padding:8px 12px;background:var(--blue-bg);border-bottom:1px solid var(--border);font-size:11px;color:var(--blue-t);display:flex;justify-content:space-between;">
+      <span>${paradas.length} parada(s)</span>
+      <span style="font-weight:600;">Total: ${totalKm.toFixed(1)} km</span>
+    </div>
+    <!-- Origem -->
+    <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--amber-bg);">
+      <div style="width:28px;height:28px;border-radius:6px;background:${origem.cor};color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">★</div>
+      <div><div style="font-size:12px;font-weight:600;">${origem.nome}</div>
+      <div style="font-size:10px;color:var(--text3);">Ponto de partida</div></div>
+    </div>
+    ${paradas.map((l,i)=>{
+      const km=segmentos[i]?.km||0;
+      const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';
+      const dotCor=COR_ROT[l.cls]||'#4338CA';
+      return `
+      <!-- Seta entre paradas -->
+      <div style="padding:3px 12px 3px 22px;font-size:10px;color:var(--text3);display:flex;align-items:center;gap:6px;">
+        <span>↓</span>
+        <span style="font-family:monospace;font-weight:600;color:${cor};">${km.toFixed(1)} km</span>
+        <div style="flex:1;height:1px;background:${cor};opacity:.3;"></div>
+      </div>
+      <!-- Parada -->
+      <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 12px;border-bottom:1px solid var(--border);">
+        <div style="width:28px;height:28px;border-radius:50%;background:${dotCor};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${i+1}</div>
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:600;">${l.nome}</div>
+          <div style="font-size:10px;color:var(--text3);">${l.data?DIAS[new Date(l.data+'T12:00').getDay()]+', '+l.dataFmt+' · ':''} ${l.pdvs?l.pdvs+' PDVs':''}</div>
+        </div>
+      </div>`;
+    }).join('')}
+    <div style="padding:10px 12px;background:var(--surface2);font-size:11px;color:var(--text2);text-align:center;">
+      🟢 &lt;5km &nbsp;·&nbsp; 🟠 5–15km &nbsp;·&nbsp; 🔴 &gt;15km
+    </div>`;
+};
 window.rotVerDistancias=function(fromId){
   rotLinhas.forEach(l=>l.remove());rotLinhas=[];
-  const cid=S.rotCid; if(!cid)return;
-  const lojas=getRotLojas(cid);
-  const origem=lojas.find(l=>l.id===fromId);
   if(!origem||!origem.lat)return;
   const dists=lojas.filter(l=>l.id!==fromId&&l.lat&&l.lng).map(l=>({
     nome:l.nome,km:rotDistKm(origem.lat,origem.lng,l.lat,l.lng),lat:l.lat,lng:l.lng
