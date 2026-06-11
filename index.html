@@ -214,6 +214,7 @@ const _params = new URLSearchParams(window.location.search);
 const IS_CONFIRM_LINK = !!(_params.get('session') || _params.get('confirm')) && !!(_params.get('rep') || _params.get('proc'));
 
 const IS_CHECKLIST_LINK = !!_params.get('checklist') && !IS_CONFIRM_LINK;
+const IS_PESQUISA_LINK = !!_params.get('pesquisa') && !IS_CONFIRM_LINK && !IS_CHECKLIST_LINK;
 
 if(IS_CONFIRM_LINK){
   document.getElementById('login-screen').style.display = 'none';
