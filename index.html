@@ -227,10 +227,10 @@ if(IS_PESQUISA_LINK){
     const token=_params.get('pesquisa');
     const DB_URL='https://implantationjsr-default-rtdb.firebaseio.com';
     const dbGet=async p=>{const r=await fetch(`${DB_URL}${p}.json`);return r.ok?r.json():null;};
-    // Busca resposta pelo token
-    const todasRespostas=await dbGet('/respostas');
-    const rid=todasRespostas?Object.keys(todasRespostas).find(k=>todasRespostas[k]?.token===token):null;
-    const respObj=rid?todasRespostas[rid]:null;
+    // Busca pelo índice público (sem auth)
+    const idx=await dbGet(`/pesquisaIndex/${token}`);
+    const rid=idx?.rid||null;
+    const respObj=rid?await dbGet(`/respostas/${rid}`):null;
     if(!respObj){
       document.body.innerHTML=`<div style="min-height:100vh;background:#f5f4f0;display:flex;align-items:center;justify-content:center;padding:24px;"><div style="background:#fff;border-radius:12px;padding:40px;max-width:420px;text-align:center;"><div style="font-size:48px;margin-bottom:16px;">❌</div><h1 style="font-size:18px;margin-bottom:8px;">Link inválido</h1><p style="color:#6b6a65;font-size:13px;">Este link não existe ou foi removido.</p></div></div>`;
       return;
@@ -322,6 +322,8 @@ if(IS_PESQUISA_LINK){
       const completedAt=new Date().toISOString();
       await fetch(`${DB_URL}/respostas/${rid}.json`,{method:'PATCH',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({answers,completed:true,completedAt})});
+      // Remove índice público após conclusão (não precisa mais)
+      await fetch(`${DB_URL}/pesquisaIndex/${token}.json`,{method:'DELETE'});
       document.body.innerHTML=`<div style="min-height:100vh;background:#f5f4f0;display:flex;align-items:center;justify-content:center;padding:24px;">
         <div style="background:#fff;border-radius:12px;padding:48px;max-width:420px;text-align:center;">
           <div style="font-size:56px;margin-bottom:16px;">🎉</div>
@@ -700,7 +702,7 @@ onAuthStateChanged(auth, user => {
       // Verifica se ainda é o mesmo usuário logado (evita race condition)
       if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
       D = snap.val() || {};
-      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.checklistTemplates = D.checklistTemplates||{}; D.clientChecklists = D.clientChecklists||{}; D.roteiros = D.roteiros||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{};
+      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.checklistTemplates = D.checklistTemplates||{}; D.clientChecklists = D.clientChecklists||{}; D.roteiros = D.roteiros||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{};
       currentProfile = D.users[user.uid];
       if (!currentProfile) {
         if (Object.keys(D.users).length === 0) {
@@ -2205,6 +2207,7 @@ function openModal(type,data={}){
   document.getElementById('ov').classList.add('open');
 }
 function closeModal(){document.getElementById('ov').classList.remove('open');document.getElementById('mb').innerHTML='';}
+window.closeModal=closeModal;
 window.updateBatchBar=function(sid){
   const cbs=[...document.querySelectorAll(`.proc-cb[data-sid="${sid}"]`)];
   const selected=cbs.filter(cb=>cb.checked);
@@ -3949,16 +3952,19 @@ window.criarLinkPesquisa=async function(prospectId){
   const qid=document.getElementById('envQid')?.value; if(!qid)return;
   const token=gi()+gi(); const rid=gi();
   await fbSet(`/respostas/${rid}`,{id:rid,prospectId,questionarioId:qid,token,criadoEm:new Date().toISOString(),criadoPor:currentProfile?.email||'',completed:false,openedAt:null,completedAt:null,answers:{}});
+  // Índice público: token → {rid, qid, prospectId} para acesso sem auth
+  await fbSet(`/pesquisaIndex/${token}`,{rid,questionarioId:qid,prospectId});
   const link=`${window.location.origin}${window.location.pathname}?pesquisa=${token}`;
   const p=D.prospects?.[prospectId]; const q=D.questionarios?.[qid];
-  const msg=`📋 *${q?.nome||'Pesquisa JSR'}*\n\nOlá${p?.nome?', '+p.nome:''}!\n\nSegue o link para preencher nossa pesquisa:\n\n${link}\n\n_JSR Sistemas_`;
+  const nome=p?.nome||'';
+  const msg=`Olá, ${nome}\n\nPara que possamos entender melhor suas necessidades e fornecer uma proposta personalizada, gostaríamos de coletar algumas informações essenciais.\n\nSegue link para preencher nossa solicitação de proposta:\n\n${link}\n\nJSR Sistemas`;
   if(navigator.clipboard)navigator.clipboard.writeText(msg).then(()=>alert('✅ Mensagem copiada! Cole no WhatsApp.'));
   else prompt('Copie:',link);
   closeModal();
 };
 window.copiarLinkPesquisa=function(token,nomeProspect){
   const link=`${window.location.origin}${window.location.pathname}?pesquisa=${token}`;
-  const msg=`📋 Pesquisa JSR\n\nOlá${nomeProspect?', '+nomeProspect:''}!\n\n${link}`;
+  const msg=`Olá, ${nomeProspect||''}\n\nPara que possamos entender melhor suas necessidades e fornecer uma proposta personalizada, gostaríamos de coletar algumas informações essenciais.\n\nSegue link para preencher nossa solicitação de proposta:\n\n${link}\n\nJSR Sistemas`;
   if(navigator.clipboard)navigator.clipboard.writeText(msg).then(()=>alert('✅ Copiado!'));
   else prompt('Link:',link);
 };
