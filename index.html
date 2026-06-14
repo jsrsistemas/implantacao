@@ -3490,8 +3490,10 @@ function renderRoteiro(){
         <button class="btn btn-sm" onclick="rotMesProximo()">▶</button>
         <span style="font-size:12px;color:var(--text2);">${feitas.length}✅ · ${agendadasLojas.length}📅 · ${aprogramar.length}⏳</span>
         <button class="btn btn-sm" onclick="exportRotCSV('${selCid}')">⬇ CSV</button>
-        <button class="btn btn-sm btn-i" onclick="imprimirRoteiroLista('${selCid}','portrait')">🖨 Lista</button>
-        <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'portrait')">📅 Cal.</button>
+        <button class="btn btn-sm btn-i" onclick="imprimirRoteiroLista('${selCid}','portrait')">🖨 Lista ↕</button>
+        <button class="btn btn-sm btn-i" onclick="imprimirRoteiroLista('${selCid}','landscape')">🖨 Lista ↔</button>
+        <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'portrait')">📅 Cal ↕</button>
+        <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'landscape')">📅 Cal ↔</button>
         `:''}
       </div>
       ${!selCid?`<div class="card" style="margin:20px;padding:40px;text-align:center;color:var(--text2);">
@@ -3629,6 +3631,172 @@ window.rotToggleBloq=async function(cid,key){
 };
 window.rotRmDia=async function(cid,key){
   await fbRemove(`/roteiros/${cid}/agenda/${key}`);
+};
+window.rotMudarAba=function(aba){
+  S.rotTab=aba; render();
+  if(aba==='map'){
+    setTimeout(()=>{
+      const el=document.getElementById('rot-mapa');
+      if(!el)return;
+      if(rotMapInst){rotMapInst.invalidateSize();return;}
+      initRoteiroMap();
+    },150);
+  }
+};
+
+window.imprimirRoteiroLista=function(cid,orient){
+  orient=orient||'portrait';
+  const c=gc(cid); if(!c)return;
+  const agenda=getRotAgenda(cid);
+  const lojas=getRotLojas(cid);
+  const obs=getRotObs(cid);
+  const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
+  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const MESES_FULL=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+  const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const feitas=lojas.filter(l=>l.status==='feito');
+  const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
+  const agendadas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
+  const pendentes=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id));
+  // Inclui dias agendados E dias só com obs
+  const todasChaves=new Set([...Object.keys(agenda),...Object.keys(obs)]);
+  const itens=[...todasChaves].sort().map(k=>{
+    const v=agenda[k]; const l=v?lojaMap[v.lojaId]:null;
+    const d=new Date(k+'T12:00:00');
+    return {k,d,l,cont:v?.cont||false,ob:obs[k]||''};
+  });
+  const porMes={};
+  itens.forEach(it=>{
+    const mes=`${it.d.getFullYear()}-${String(it.d.getMonth()+1).padStart(2,'0')}`;
+    if(!porMes[mes])porMes[mes]={label:`${MESES_FULL[it.d.getMonth()]} ${it.d.getFullYear()}`,itens:[]};
+    porMes[mes].itens.push(it);
+  });
+  const rows=Object.values(porMes).map(({label,itens})=>`
+    <tr><td colspan="6" style="background:#1e293b;color:#fff;padding:7px 12px;font-size:11px;font-weight:700;">${label}</td></tr>
+    ${itens.map(({k,d,l,cont,ob})=>{
+      const ds=d.getDay();
+      const isFeita=l?.status==='feito';
+      const cor=cont?'#6D28D9':isFeita?'#166534':l?(COR[l.cls]||'#1e293b'):'#B45309';
+      const bg=cont?'#F5F3FF':isFeita?'#f0fdf4':l?'#fff':'#FFFBEB';
+      const bgChip=cont?'#EDE9FE':isFeita?'#dcfce7':l?(BG[l.cls]||'#f1f5f9'):'#FFFBEB';
+      const statusBadge=isFeita?'✅ Feita':cont?'↩ Retorno':l?l.cls.toUpperCase():'';
+      return `<tr style="background:${bg};">
+        <td style="padding:6px 10px;font-size:11px;color:#64748b;white-space:nowrap;border-bottom:1px solid #e2e8f0;">${k.split('-').reverse().join('/')}</td>
+        <td style="padding:6px 10px;font-size:11px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">${dias[ds]}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;">${l?`<span style="background:${bgChip};color:${cor};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${cont?'↩ ':''}${isFeita?'✅ ':''}${l.nome}</span>`:'<span style="color:#B45309;font-size:11px;font-style:italic;">— só observação —</span>'}</td>
+        <td style="padding:6px 10px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:center;">${l?.pdvs||'—'}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;">${statusBadge?`<span style="background:${bgChip};color:${cor};padding:2px 7px;border-radius:12px;font-size:10px;font-weight:600;">${statusBadge}</span>`:''}</td>
+        <td style="padding:6px 10px;font-size:10px;color:#92400e;border-bottom:1px solid #e2e8f0;font-style:italic;">${ob?'📝 '+ob:''}</td>
+      </tr>`;
+    }).join('')}`).join('');
+  // Resumo por status
+  const sumario=`<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 16px;text-align:center;min-width:90px;"><div style="font-size:22px;font-weight:700;color:#166534;">${feitas.length}</div><div style="font-size:10px;color:#166534;">✅ Feitas</div></div>
+    <div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;padding:10px 16px;text-align:center;min-width:90px;"><div style="font-size:22px;font-weight:700;color:#4338CA;">${agendadas.length}</div><div style="font-size:10px;color:#4338CA;">📅 Agendadas</div></div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;text-align:center;min-width:90px;"><div style="font-size:22px;font-weight:700;color:#64748b;">${pendentes.length}</div><div style="font-size:10px;color:#64748b;">⏳ Pendentes</div></div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;text-align:center;min-width:90px;"><div style="font-size:22px;font-weight:700;color:#1e293b;">${lojas.length}</div><div style="font-size:10px;color:#64748b;">🏪 Total</div></div>
+  </div>`;
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Roteiro — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:28px;background:#fff;}
+  @media print{body{padding:0;}@page{margin:12mm 10mm;size:A4 ${orient};}.no-print{display:none!important;}}
+  table{width:100%;border-collapse:collapse;}th{background:#1e293b;color:#fff;padding:7px 10px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}</style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
+    <button onclick="window.print()" style="padding:9px 18px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🖨 ${orient==='landscape'?'Paisagem':'Retrato'} — Imprimir</button>
+    <button onclick="window.close()" style="padding:9px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
+  </div>
+  <div style="margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1e293b;">
+    <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:5px;">JSR Sistemas · TrainControl</div>
+    <h1 style="font-size:20px;font-weight:700;margin-bottom:3px;">${c.name} — Roteiro de Lojas</h1>
+    <div style="font-size:11px;color:#94a3b8;">Gerado em ${today}</div>
+  </div>
+  ${sumario}
+  <table><thead><tr><th style="width:90px;">Data</th><th style="width:45px;">Dia</th><th>Loja</th><th style="width:45px;text-align:center;">PDVs</th><th style="width:80px;">Status</th><th>Observação</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
+};
+
+window.imprimirRoteiroCal=function(cid,mesBase,anoBase,orient){
+  orient=orient||'portrait';
+  const c=gc(cid);if(!c)return;
+  const agenda=getRotAgenda(cid);
+  const lojas=getRotLojas(cid);
+  const obs=getRotObs(cid);
+  const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
+  const DIAS_CAB=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const MESES_FULL=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+  const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const todasChaves=new Set([...Object.keys(agenda),...Object.keys(obs)]);
+  const mesesSet=new Set();
+  todasChaves.forEach(k=>{const d=new Date(k+'T12:00:00');mesesSet.add(`${d.getFullYear()}-${d.getMonth()}`);});
+  if(!mesesSet.size)mesesSet.add(`${anoBase}-${mesBase}`);
+  const mesesArr=[...mesesSet].sort().map(m=>{const[ano,mes]=m.split('-').map(Number);return{ano,mes};});
+  const feitas=lojas.filter(l=>l.status==='feito');
+  const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
+  const agendadas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
+  const pendentes=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id));
+  const sumario=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:7px 12px;text-align:center;"><b style="color:#166534;">${feitas.length}</b> <span style="font-size:10px;color:#166534;">✅ Feitas</span></div>
+    <div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:6px;padding:7px 12px;text-align:center;"><b style="color:#4338CA;">${agendadas.length}</b> <span style="font-size:10px;color:#4338CA;">📅 Agendadas</span></div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:7px 12px;text-align:center;"><b style="color:#64748b;">${pendentes.length}</b> <span style="font-size:10px;color:#64748b;">⏳ Pendentes</span></div>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+      ${[['#4338CA','#EEF2FF','LR'],['#047857','#ECFDF5','SN'],['#B45309','#FFFBEB','Laranja'],['#B91C1C','#FEF2F2','Vermelho'],['#6D28D9','#F5F3FF','↩ Retorno'],['#166534','#f0fdf4','✅ Feita']].map(([cor,bg,l])=>`<span style="background:${bg};color:${cor};padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600;">${l}</span>`).join('')}
+    </div>
+  </div>`;
+  const calendarios=mesesArr.map(({ano,mes})=>{
+    const prim=new Date(ano,mes,1).getDay();
+    const nDias=new Date(ano,mes+1,0).getDate();
+    let rows='<tr>';let col=0;
+    for(let i=0;i<prim;i++){rows+=`<td style="background:#f8fafc;border:1px solid #e2e8f0;"></td>`;col++;}
+    for(let d=1;d<=nDias;d++){
+      if(col===7){rows+='</tr><tr>';col=0;}
+      const k=`${ano}-${String(mes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const ds=new Date(ano,mes,d).getDay();
+      const isDom=ds===0||ds===6;
+      const ev=agenda[k];const o=obs[k];const l=ev?lojaMap[ev.lojaId]:null;
+      const isFeita=l?.status==='feito';
+      const cor=ev?(ev.cont?'#6D28D9':isFeita?'#166534':(COR[l?.cls]||'#1e293b')):'inherit';
+      const bg=ev?(ev.cont?'#F5F3FF':isFeita?'#f0fdf4':(BG[l?.cls]||'#fff')):(o?'#FEFCE8':'#fff');
+      rows+=`<td style="vertical-align:top;border:1px solid #e2e8f0;padding:3px 4px;background:${isDom?'#f8fafc':bg};width:14.28%;height:68px;">
+        <div style="font-size:9px;font-weight:700;color:${isDom?'#94a3b8':'#475569'};margin-bottom:2px;">${d}</div>
+        ${l?`<div style="font-size:9px;font-weight:600;color:${cor};line-height:1.3;">${ev.cont?'↩ ':isFeita?'✅ ':''}${l.nome}</div>
+        <div style="font-size:8px;color:${cor};opacity:.8;">${isFeita?'Feita':ev.cont?'Retorno':l.cls.toUpperCase()}${l.pdvs?' · '+l.pdvs+'p':''}</div>`:''}
+        ${o?`<div style="font-size:8px;color:#92400e;margin-top:2px;font-style:italic;">📝 ${o.slice(0,28)}${o.length>28?'…':''}</div>`:''}
+      </td>`;
+      col++;
+    }
+    const rem=(7-col)%7;for(let i=0;i<rem;i++)rows+=`<td style="background:#f8fafc;border:1px solid #e2e8f0;"></td>`;
+    rows+='</tr>';
+    return `<div style="margin-bottom:18px;page-break-inside:avoid;">
+      <div style="font-size:11px;font-weight:700;color:#1e293b;margin-bottom:5px;padding-bottom:4px;border-bottom:2px solid #1e293b;letter-spacing:.06em;text-transform:uppercase;">${MESES_FULL[mes]} ${ano}</div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>${DIAS_CAB.map(d=>`<th style="background:#1e293b;color:#fff;padding:4px 3px;font-size:9px;text-align:center;">${d}</th>`).join('')}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  });
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Calendário — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:24px;background:#fff;}
+  @media print{body{padding:0;}@page{margin:${orient==='landscape'?'8mm 10mm':'10mm 8mm'};size:A4 ${orient};}.no-print{display:none!important;}}</style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
+    <button onclick="window.print()" style="padding:8px 16px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;">🖨 ${orient==='landscape'?'Paisagem':'Retrato'} — Imprimir</button>
+    <button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
+  </div>
+  <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #1e293b;display:flex;justify-content:space-between;align-items:flex-start;">
+    <div>
+      <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:4px;">JSR Sistemas · TrainControl</div>
+      <h1 style="font-size:18px;font-weight:700;">${c.name} — Calendário de Roteiro</h1>
+      <div style="font-size:10px;color:#94a3b8;margin-top:2px;">Gerado em ${today}</div>
+    </div>
+  </div>
+  ${sumario}
+  ${calendarios.join('')}
+  <script>setTimeout(()=>window.print(),600);<\/script></body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
 };
 window.rotAbrirObs=function(cid,key,label){
   const obs=getRot(cid).obs?.[key]||'';
