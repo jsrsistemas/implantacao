@@ -3386,6 +3386,70 @@ function renderRoteiro(){
   const mesBase=S.rotMes??now.getMonth();
   const anoBase=S.rotAno??now.getFullYear();
 
+  // Constrói sidebar HTML de forma segura (evita template literals aninhados)
+  function buildSidebar(){
+    if(!selCid) return '<div style="flex:1;overflow-y:auto;padding:10px;"><div style="font-size:12px;color:var(--text2);">Selecione um cliente acima</div></div>';
+    let s='';
+    // Stats
+    s+=`<div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:5px;">
+      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--green-bg);">
+        <div style="font-size:15px;font-weight:700;color:var(--green-t);">${feitas.length}</div>
+        <div style="font-size:9px;color:var(--green-t);">✅ Feitas</div>
+      </div>
+      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--blue-bg);">
+        <div style="font-size:15px;font-weight:700;color:var(--blue-t);">${agendadasLojas.length}</div>
+        <div style="font-size:9px;color:var(--blue-t);">📅 Agendadas</div>
+      </div>
+      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--surface2);">
+        <div style="font-size:15px;font-weight:700;color:var(--text2);">${aprogramar.length}</div>
+        <div style="font-size:9px;color:var(--text2);">⏳ Pendentes</div>
+      </div>
+    </div>`;
+    s+='<div style="flex:1;overflow-y:auto;padding:10px;">';
+    // A programar
+    if(aprogramar.length>0){
+      s+=`<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">⏳ A programar</div>`;
+      aprogramar.forEach(l=>{
+        s+=`<div class="rot-chip ${l.cls||'lr'}" draggable="true" ondragstart="rotDragStart(event,'${l.id}',null)" ondragend="rotDragEnd(event)" style="margin-bottom:4px;">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(l.nome)}</span>
+          <span style="font-size:9px;opacity:.6;">${l.pdvs>0?l.pdvs+'p':''}</span>
+        </div>`;
+      });
+    }
+    // Agendadas
+    if(agendadasLojas.length>0){
+      s+=`<div style="font-size:10px;font-weight:700;color:var(--blue-t);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 5px;">📅 Agendadas</div>`;
+      agendadasLojas.forEach(l=>{
+        s+=`<div style="display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--blue-bg);border-radius:var(--r);margin-bottom:3px;font-size:11px;">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--blue-t);">${esc(l.nome)}</span>
+          <button title="Marcar como feita" onclick="rotMarcarFeita('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--green-t);cursor:pointer;font-size:15px;padding:0;line-height:1;">✓</button>
+        </div>`;
+      });
+    }
+    // Feitas
+    if(feitas.length>0){
+      s+=`<div style="font-size:10px;font-weight:700;color:var(--green-t);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 5px;">✅ Concluídas</div>`;
+      feitas.forEach(l=>{
+        s+=`<div style="display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--green-bg);border-radius:var(--r);margin-bottom:3px;font-size:11px;border:1px solid #86efac;">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--green-t);text-decoration:line-through;opacity:.8;">${esc(l.nome)}</span>
+          <button title="Desfazer" onclick="rotDesmarcarFeita('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:11px;padding:0;line-height:1;">↩</button>
+        </div>`;
+      });
+    }
+    s+=`<hr style="border:none;border-top:1px solid var(--border);margin:10px 0;">
+    <button class="btn btn-sm btn-p" style="width:100%;margin-bottom:4px;" onclick="openAddLojaModal('${selCid}')">+ Nova loja</button>`;
+    lojas.forEach(l=>{
+      s+=`<div style="display:flex;align-items:center;gap:5px;padding:4px 8px;background:var(--surface2);border-radius:var(--r);margin-bottom:2px;font-size:11px;">
+        <span style="width:7px;height:7px;border-radius:50%;background:${ROT_COR[l.cls]||'#94A3B8'};flex-shrink:0;"></span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(l.nome)}</span>
+        <button onclick="openAddLojaModal('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--blue-t);cursor:pointer;font-size:11px;padding:0 1px;">✎</button>
+        <button onclick="rmRotLoja('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--red);cursor:pointer;font-size:13px;padding:0 1px;">×</button>
+      </div>`;
+    });
+    s+='</div>';
+    return s;
+  }
+
   return `
   <style>
     .rot-chip{font-size:11px;font-weight:500;padding:5px 7px;border-radius:5px;cursor:grab;display:flex;align-items:center;gap:5px;user-select:none;border:1px solid transparent;}
@@ -3404,53 +3468,9 @@ function renderRoteiro(){
   </style>
 
   <div style="display:flex;height:calc(100vh - 120px);overflow:hidden;">
-
     <!-- SIDEBAR -->
     <div style="width:230px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
-      ${selCid?`<div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:5px;">
-        <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--green-bg);">
-          <div style="font-size:15px;font-weight:700;color:var(--green-t);">${feitas.length}</div>
-          <div style="font-size:9px;color:var(--green-t);">✅ Feitas</div>
-        </div>
-        <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--blue-bg);">
-          <div style="font-size:15px;font-weight:700;color:var(--blue-t);">${agendadasLojas.length}</div>
-          <div style="font-size:9px;color:var(--blue-t);">📅 Agendadas</div>
-        </div>
-        <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--surface2);">
-          <div style="font-size:15px;font-weight:700;color:var(--text2);">${aprogramar.length}</div>
-          <div style="font-size:9px;color:var(--text2);">⏳ Pendentes</div>
-        </div>
-      </div>`:''}
-      <div style="flex:1;overflow-y:auto;padding:10px;">
-        ${!selCid?`<div style="font-size:12px;color:var(--text2);">Selecione um cliente acima</div>`:''}
-        ${aprogramar.length>0?`<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">⏳ A programar</div>`:''}
-        ${aprogramar.map(l=>`
-          <div class="rot-chip ${l.cls}" draggable="true"
-            ondragstart="rotDragStart(event,'${l.id}',null)"
-            ondragend="rotDragEnd(event)"
-            style="margin-bottom:4px;">
-            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.nome}</span>
-            <span style="font-size:9px;opacity:.6;">${l.pdvs>0?l.pdvs+'p':''}</span>
-          </div>`).join('')}
-        ${agendadasLojas.length>0?`<div style="font-size:10px;font-weight:700;color:var(--blue-t);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 5px;">📅 Agendadas</div>
-        ${agendadasLojas.map(l=>`<div style="display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--blue-bg);border-radius:var(--r);margin-bottom:3px;font-size:11px;">
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--blue-t);">${l.nome}</span>
-          <button title="Marcar como feita" onclick="rotMarcarFeita('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--green-t);cursor:pointer;font-size:15px;padding:0;line-height:1;">✓</button>
-        </div>`).join('')}`:''}
-        ${feitas.length>0?`<div style="font-size:10px;font-weight:700;color:var(--green-t);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 5px;">✅ Concluídas</div>
-        ${feitas.map(l=>`<div style="display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--green-bg);border-radius:var(--r);margin-bottom:3px;font-size:11px;border:1px solid #86efac;">
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--green-t);text-decoration:line-through;opacity:.8;">${l.nome}</span>
-          <button title="Desfazer" onclick="rotDesmarcarFeita('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:11px;padding:0;line-height:1;">↩</button>
-        </div>`).join('')}`:''}
-        <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;">
-        ${selCid?`<button class="btn btn-sm btn-p" style="width:100%;margin-bottom:4px;" onclick="openAddLojaModal('${selCid}')">+ Nova loja</button>`:''}
-        ${lojas.map(l=>`<div style="display:flex;align-items:center;gap:5px;padding:4px 8px;background:var(--surface2);border-radius:var(--r);margin-bottom:2px;font-size:11px;">
-          <span style="width:7px;height:7px;border-radius:50%;background:${ROT_COR[l.cls]||'#94A3B8'};flex-shrink:0;"></span>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.nome}</span>
-          <button onclick="openAddLojaModal('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--blue-t);cursor:pointer;font-size:11px;padding:0 1px;">✎</button>
-          <button onclick="rmRotLoja('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--red);cursor:pointer;font-size:13px;padding:0 1px;">×</button>
-        </div>`).join('')}
-      </div>
+      ${buildSidebar()}
     </div>
 
     <!-- ÁREA PRINCIPAL -->
@@ -3474,7 +3494,6 @@ function renderRoteiro(){
         <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'portrait')">📅 Cal.</button>
         `:''}
       </div>
-
       ${!selCid?`<div class="card" style="margin:20px;padding:40px;text-align:center;color:var(--text2);">
         <div style="font-size:32px;margin-bottom:12px;">📅</div>
         <div style="font-size:15px;font-weight:500;">Selecione um cliente para ver o roteiro</div>
