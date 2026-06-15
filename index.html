@@ -4044,6 +4044,134 @@ function initRoteiroMap(){
     rotMarcadores[l.id]=m;
   });
 }
+// ── Variáveis do mapa de roteiro ──────────
+const ROT_CORES_ORIG=['#F59E0B','#8B5CF6','#EC4899','#06B6D4','#10B981','#EF4444'];
+let rotOrigens=[];
+
+window.rotAdicionarOrigem=async function(){
+  const nome=document.getElementById('rotOrigNome')?.value.trim()||'Ponto '+(rotOrigens.length+1);
+  const addr=document.getElementById('rotOrigEnd')?.value.trim();
+  if(!addr)return;
+  const btn=document.getElementById('rotOrigBtn');
+  const status=document.getElementById('rotOrigStatus');
+  if(btn){btn.textContent='Buscando...';btn.disabled=true;}
+  if(status){status.style.color='var(--amber)';status.textContent='Buscando endereço...';}
+  try{
+    const url=`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr+', Brasil')}&limit=1&countrycodes=br`;
+    const resp=await fetch(url,{headers:{'Accept-Language':'pt-BR','User-Agent':'TrainControl-JSR/1.0'}});
+    const data=await resp.json();
+    if(!data.length){if(status){status.style.color='var(--red)';status.textContent='❌ Endereço não encontrado. Tente ser mais específico.';}return;}
+    const{lat,lon,display_name}=data[0];
+    const cor=ROT_CORES_ORIG[rotOrigens.length%ROT_CORES_ORIG.length];
+    const id='orig_'+Date.now();
+    const p={id,nome,lat:parseFloat(lat),lng:parseFloat(lon),cor,endereco:display_name};
+    rotOrigens.push(p);
+    if(rotMapInst){
+      const icon=L.divIcon({className:'',
+        html:`<div style="background:${cor};color:#fff;border:2.5px solid #fff;border-radius:6px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;" title="${nome}">★</div>`,
+        iconSize:[32,32],iconAnchor:[16,16]});
+      const m=L.marker([p.lat,p.lng],{icon,zIndexOffset:1000}).addTo(rotMapInst);
+      m.bindPopup(`<div style="font-family:sans-serif;min-width:160px;"><b>★ ${nome}</b><br>
+        <button onclick="rotVerDistOrigem('${id}')" style="margin-top:8px;width:100%;font-size:11px;padding:5px;border:1px solid #ddd;border-radius:5px;background:#f5f5f5;cursor:pointer;">📍 Ver distâncias daqui</button>
+        <button onclick="rotRemoverOrigem('${id}')" style="margin-top:4px;width:100%;font-size:11px;padding:5px;border:1px solid #fca5a5;border-radius:5px;background:#fef2f2;color:#b91c1c;cursor:pointer;">× Remover</button></div>`);
+      m.on('click',()=>rotVerDistOrigem(id));
+      p.marker=m;
+      rotMapInst.setView([p.lat,p.lng],12);
+    }
+    rotRenderOrigemList();
+    if(status){status.style.color='var(--green-t)';status.textContent=`✅ "${nome}" adicionado!`;}
+    const ne=document.getElementById('rotOrigEnd'); if(ne)ne.value='';
+    const nn=document.getElementById('rotOrigNome'); if(nn)nn.value='';
+    setTimeout(()=>{const el=document.getElementById('rotOrigStatus');if(el&&el.textContent.startsWith('✅'))el.textContent='';},3000);
+    rotVerDistOrigem(id);
+  }catch(e){if(status){status.style.color='var(--red)';status.textContent='❌ Erro de conexão. Verifique sua internet.';}}
+  finally{if(btn){btn.textContent='🔍 Buscar';btn.disabled=false;}}
+};
+
+function rotRenderOrigemList(){
+  const el=document.getElementById('rotOrigemList');if(!el)return;
+  if(!rotOrigens.length){el.innerHTML='<span style="font-size:11px;color:var(--text3);">Nenhum ponto ainda</span>';return;}
+  el.innerHTML=rotOrigens.map(p=>`<div style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:500;padding:4px 9px;border-radius:20px;border:1.5px solid ${p.cor};color:${p.cor};background:${p.cor}18;cursor:pointer;" onclick="rotVerDistOrigem('${p.id}')">★ ${p.nome}<span style="opacity:.5;font-size:13px;margin-left:2px;cursor:pointer;" onclick="event.stopPropagation();rotRemoverOrigem('${p.id}')">×</span></div>`).join('');
+}
+
+window.rotRemoverOrigem=function(id){
+  const idx=rotOrigens.findIndex(p=>p.id===id);if(idx<0)return;
+  if(rotOrigens[idx].marker)rotOrigens[idx].marker.remove();
+  rotOrigens.splice(idx,1);rotLinhas.forEach(l=>l.remove());rotLinhas=[];rotRenderOrigemList();
+};
+
+window.rotVerDistOrigem=function(id){
+  rotLinhas.forEach(l=>l.remove());rotLinhas=[];
+  const p=rotOrigens.find(x=>x.id===id);if(!p||!rotMapInst)return;
+  const cid=S.rotCid;if(!cid)return;
+  const lojas=getRotLojas(cid).filter(l=>l.lat&&l.lng);
+  const agenda=getRotAgenda(cid);
+  const agendadas=new Set(Object.values(agenda).map(v=>v.lojaId));
+  const dists=lojas.map(l=>({nome:l.nome,km:rotDistKm(p.lat,p.lng,l.lat,l.lng),lat:l.lat,lng:l.lng,id:l.id,agendada:agendadas.has(l.id)})).sort((a,b)=>a.km-b.km);
+  const maxKm=dists.length?dists[dists.length-1].km:1;
+  dists.forEach(({km,lat,lng,agendada})=>{
+    const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';
+    rotLinhas.push(L.polyline([[p.lat,p.lng],[lat,lng]],{color:cor,weight:agendada?2.5:1.5,opacity:agendada?.8:.4,dashArray:agendada?null:'4 4'}).addTo(rotMapInst));
+  });
+  const titulo=document.getElementById('rot-dist-titulo');const body=document.getElementById('rot-dist-body');
+  if(titulo)titulo.textContent=`★ ${p.nome}`;
+  if(body)body.innerHTML=`<div style="padding:6px 10px;background:var(--surface2);font-size:10px;color:var(--text3);border-bottom:1px solid var(--border);">🟢 &lt;5km · 🟠 5–15km · 🔴 &gt;15km</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr>
+      <th style="background:var(--surface2);padding:5px 10px;text-align:left;font-size:10px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);position:sticky;top:0;">Loja</th>
+      <th style="background:var(--surface2);padding:5px 8px;text-align:right;font-size:10px;border-bottom:1px solid var(--border);position:sticky;top:0;">Dist.</th>
+    </tr></thead><tbody>
+    ${dists.map(({nome,km,agendada})=>{const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';const pct=Math.round((km/maxKm)*100);
+      return `<tr style="background:${agendada?'':'#f8fafc'};opacity:${agendada?1:.7};">
+        <td style="padding:5px 10px;border-bottom:0.5px solid var(--border);">${agendada?'📌 ':''}${nome}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);text-align:right;">
+          <span style="font-family:monospace;font-weight:600;color:${cor};">${km.toFixed(1)}<span style="font-size:9px;color:var(--text3);"> km</span></span>
+          <div style="width:40px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:2px;margin-left:auto;"><div style="width:${pct}%;height:4px;background:${cor};border-radius:2px;"></div></div>
+        </td></tr>`;}).join('')}
+    </tbody></table>`;
+  rotMapInst.setView([p.lat,p.lng],12);
+};
+
+window.rotLimparLinhas=function(){rotLinhas.forEach(l=>l.remove());rotLinhas=[];};
+window.rotMostrarTodas=function(){rotLinhas.forEach(l=>l.remove());rotLinhas=[];if(rotMapInst){initRoteiroMap();rotMapInst.setView([-23.57,-46.55],11);}};
+
+window.rotMontarRoteiro=function(cid){
+  if(!rotMapInst)return alert('Aguarde o mapa carregar e tente novamente.');
+  if(!rotOrigens.length)return alert('Adicione um ponto de partida primeiro.\n\nDigite o endereço e clique em 🔍 Buscar.');
+  const origem=rotOrigens[0];
+  const lojas=getRotLojas(cid).filter(l=>l.lat&&l.lng);
+  if(!lojas.length)return alert('Nenhuma loja com endereço cadastrado.\n\nEdite as lojas e adicione o endereço.');
+  rotLinhas.forEach(l=>l.remove());rotLinhas=[];
+  Object.values(rotMarcadores).forEach(m=>m.remove());rotMarcadores={};
+  const agenda=getRotAgenda(cid);
+  const mes=S.rotMes??new Date().getMonth();const ano=S.rotAno??new Date().getFullYear();
+  const mesStr=`${ano}-${String(mes+1).padStart(2,'0')}`;
+  const lojasNoMes=Object.entries(agenda).filter(([k,v])=>k.startsWith(mesStr)&&!v.cont).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>{const l=lojas.find(x=>x.id===v.lojaId);return l?{...l,data:k,dataFmt:k.split('-').reverse().join('/')}:null;}).filter(Boolean);
+  const paradas=lojasNoMes.length>0?lojasNoMes:[...lojas].sort((a,b)=>rotDistKm(origem.lat,origem.lng,a.lat,a.lng)-rotDistKm(origem.lat,origem.lng,b.lat,b.lng));
+  if(!paradas.length)return alert('Nenhuma loja com coordenadas para montar o roteiro.');
+  const COR_ROT={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};const DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  let pontos=[{lat:origem.lat,lng:origem.lng}];paradas.forEach(l=>pontos.push({lat:l.lat,lng:l.lng}));
+  let totalKm=0;const segmentos=[];
+  for(let i=0;i<pontos.length-1;i++){const de=pontos[i],ate=pontos[i+1];const km=rotDistKm(de.lat,de.lng,ate.lat,ate.lng);totalKm+=km;segmentos.push({km,idx:i});
+    const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';const l=L.polyline([[de.lat,de.lng],[ate.lat,ate.lng]],{color:cor,weight:3,opacity:.85}).addTo(rotMapInst);l.bindTooltip(`Trecho ${i+1}: ${km.toFixed(1)} km`,{sticky:true});rotLinhas.push(l);}
+  paradas.forEach((l,i)=>{
+    const icon=L.divIcon({className:'',html:`<div style="background:${COR_ROT[l.cls]||'#4338CA'};color:#fff;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.3);">${i+1}</div>`,iconSize:[28,28],iconAnchor:[14,14]});
+    const m=L.marker([l.lat,l.lng],{icon,zIndexOffset:500}).addTo(rotMapInst);m.bindPopup(`<div style="font-family:sans-serif;min-width:140px;"><div style="font-size:13px;font-weight:700;">${i+1}. ${l.nome}</div><div style="font-size:11px;color:#666;">${l.data?DIAS[new Date(l.data+'T12:00').getDay()]+' '+l.dataFmt:''}</div></div>`);rotLinhas.push(m);});
+  rotMapInst.fitBounds([[origem.lat,origem.lng],...paradas.map(l=>[l.lat,l.lng])],{padding:[32,32]});
+  const titulo=document.getElementById('rot-dist-titulo');const body=document.getElementById('rot-dist-body');
+  if(titulo)titulo.innerHTML=`🗺 Roteiro`;
+  if(body)body.innerHTML=`<div style="padding:8px 12px;background:var(--blue-bg);border-bottom:1px solid var(--border);font-size:11px;color:var(--blue-t);display:flex;justify-content:space-between;"><span>${paradas.length} parada(s)</span><span style="font-weight:600;">Total: ${totalKm.toFixed(1)} km</span></div>
+    <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--amber-bg);">
+      <div style="width:28px;height:28px;border-radius:6px;background:${origem.cor||'#F59E0B'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">★</div>
+      <div><div style="font-size:12px;font-weight:600;">${origem.nome}</div><div style="font-size:10px;color:var(--text3);">Ponto de partida</div></div></div>
+    ${paradas.map((l,i)=>{const km=segmentos[i]?.km||0;const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';const dotCor=COR_ROT[l.cls]||'#4338CA';
+      return `<div style="padding:3px 12px 3px 22px;font-size:10px;color:var(--text3);display:flex;align-items:center;gap:6px;">↓<span style="font-family:monospace;font-weight:600;color:${cor};">${km.toFixed(1)} km</span></div>
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 12px;border-bottom:1px solid var(--border);">
+          <div style="width:28px;height:28px;border-radius:50%;background:${dotCor};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${i+1}</div>
+          <div style="flex:1;"><div style="font-size:12px;font-weight:600;">${l.nome}</div>
+          <div style="font-size:10px;color:var(--text3);">${l.data?DIAS[new Date(l.data+'T12:00').getDay()]+', '+l.dataFmt+' · ':''} ${l.pdvs?l.pdvs+' PDVs':''}</div></div></div>`;}).join('')}
+    <div style="padding:10px 12px;font-size:11px;color:var(--text2);text-align:center;">🟢 &lt;5km · 🟠 5–15km · 🔴 &gt;15km</div>`;
+};
+
 window.rotVerDistancias=function(fromId){
   rotLinhas.forEach(l=>l.remove());rotLinhas=[];
   const cid=S.rotCid; if(!cid)return;
