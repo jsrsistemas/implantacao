@@ -3964,48 +3964,84 @@ window.rotMesProximo=function(){
 };
 
 // ── CRUD Lojas do roteiro ────────────────
-window.openAddLojaModal=function(cid){
+window.openAddLojaModal=function(cid,editId=''){
+  const existing=editId?getRotLojas(cid).find(l=>l.id===editId):null;
   const mbEl=document.getElementById('mb');
-  mbEl.style.maxWidth='460px';
+  mbEl.style.maxWidth='500px';
   mbEl.innerHTML=`
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-      <h3 style="font-size:15px;font-weight:500;">🏪 Adicionar loja ao roteiro</h3>
+      <h3 style="font-size:15px;font-weight:500;">🏪 ${editId?'Editar':'Adicionar'} loja ao roteiro</h3>
       <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button>
     </div>
     <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
-      <div><label class="lbl">Nome da loja</label><input class="inp" id="rotLojaNome" placeholder="Ex: L01 Centro"></div>
       <div style="display:flex;gap:10px;">
-        <div style="flex:1;"><label class="lbl">PDVs</label><input type="number" class="inp" id="rotLojaPdvs" value="3" min="0" max="50"></div>
-        <div style="flex:2;"><label class="lbl">Regime</label>
-          <select class="inp" id="rotLojaCls">
-            <option value="lr">LR — prioridade</option>
-            <option value="sn">SN</option>
-            <option value="warn">Laranja — atenção cert.</option>
-            <option value="crit">Vermelho — cert. crítico</option>
-          </select>
+        <div style="width:90px;"><label class="lbl">Nº da loja</label>
+          <input class="inp" id="rotLojaNro" placeholder="01" value="${esc(existing?.numero||'')}" style="text-align:center;font-weight:700;font-size:15px;">
+        </div>
+        <div style="flex:1;"><label class="lbl">Nome da loja *</label>
+          <input class="inp" id="rotLojaNome" placeholder="Ex: L01 Centro" value="${esc(existing?.nome||'')}">
         </div>
       </div>
       <div style="display:flex;gap:10px;">
-        <div style="flex:1;"><label class="lbl">Lat (opcional)</label><input class="inp" id="rotLojaLat" placeholder="-23.5937"></div>
-        <div style="flex:1;"><label class="lbl">Lng (opcional)</label><input class="inp" id="rotLojaLng" placeholder="-46.4885"></div>
+        <div style="flex:1;"><label class="lbl">PDVs</label><input type="number" class="inp" id="rotLojaPdvs" value="${existing?.pdvs??3}" min="0" max="50"></div>
+        <div style="flex:2;"><label class="lbl">Regime</label>
+          <select class="inp" id="rotLojaCls">
+            <option value="lr"${(existing?.cls||'lr')==='lr'?' selected':''}>LR — prioridade</option>
+            <option value="sn"${existing?.cls==='sn'?' selected':''}>SN</option>
+            <option value="warn"${existing?.cls==='warn'?' selected':''}>Laranja — atenção cert.</option>
+            <option value="crit"${existing?.cls==='crit'?' selected':''}>Vermelho — cert. crítico</option>
+          </select>
+        </div>
       </div>
+      <div>
+        <label class="lbl">Endereço (para o mapa)</label>
+        <div style="display:flex;gap:6px;">
+          <input class="inp" id="rotLojaEnd" placeholder="Ex: Av. Paulista, 1000, São Paulo" value="${esc(existing?.endereco||'')}" style="flex:1;"
+            onkeydown="if(event.key==='Enter')rotGeocodeLoja()">
+          <button class="btn btn-i btn-sm" onclick="rotGeocodeLoja()" id="rotGeoBtn" style="flex-shrink:0;white-space:nowrap;">🔍 Buscar</button>
+        </div>
+        <div id="rotGeoStatus" style="font-size:11px;margin-top:4px;min-height:14px;color:var(--text3);">
+          ${existing?.lat?`✅ Posição salva: ${existing.lat.toFixed(4)}, ${existing.lng.toFixed(4)}`:'Digite o endereço e clique em Buscar'}
+        </div>
+      </div>
+      <input type="hidden" id="rotLojaLat" value="${existing?.lat||''}">
+      <input type="hidden" id="rotLojaLng" value="${existing?.lng||''}">
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button class="btn" onclick="closeModal()">Cancelar</button>
-        <button class="btn btn-p" onclick="rotSalvarLoja('${cid}')">Adicionar</button>
+        <button class="btn btn-p" onclick="rotSalvarLoja('${cid}','${editId}')">${editId?'Salvar':'Adicionar'}</button>
       </div>
     </div>`;
   document.getElementById('ov').classList.add('open');
 };
-window.rotSalvarLoja=async function(cid){
+window.rotSalvarLoja=async function(cid,editId=''){
   const nome=document.getElementById('rotLojaNome')?.value.trim();
+  const numero=document.getElementById('rotLojaNro')?.value.trim()||'';
   const pdvs=parseInt(document.getElementById('rotLojaPdvs')?.value)||0;
   const cls=document.getElementById('rotLojaCls')?.value||'lr';
+  const endereco=document.getElementById('rotLojaEnd')?.value.trim()||'';
   const lat=parseFloat(document.getElementById('rotLojaLat')?.value)||null;
   const lng=parseFloat(document.getElementById('rotLojaLng')?.value)||null;
   if(!nome)return alert('Informe o nome da loja.');
-  const id=gi();
-  await fbSet(`/roteiros/${cid}/lojas/${id}`,{id,nome,pdvs,cls,lat,lng});
+  const id=editId||gi();
+  await fbSet(`/roteiros/${cid}/lojas/${id}`,{id,nome,numero,pdvs,cls,endereco,lat,lng});
   closeModal();
+};
+window.rotGeocodeLoja=async function(){
+  const addr=document.getElementById('rotLojaEnd')?.value.trim(); if(!addr)return;
+  const btn=document.getElementById('rotGeoBtn'); const status=document.getElementById('rotGeoStatus');
+  if(btn){btn.textContent='Buscando...';btn.disabled=true;}
+  if(status){status.style.color='var(--amber)';status.textContent='Buscando endereço...';}
+  try{
+    const url=`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr+', Brasil')}&limit=1&countrycodes=br`;
+    const resp=await fetch(url,{headers:{'Accept-Language':'pt-BR','User-Agent':'TrainControl-JSR/1.0'}});
+    const data=await resp.json();
+    if(!data.length){if(status){status.style.color='var(--red)';status.textContent='❌ Endereço não encontrado.';}return;}
+    const{lat,lon,display_name}=data[0];
+    document.getElementById('rotLojaLat').value=lat;
+    document.getElementById('rotLojaLng').value=lon;
+    if(status){status.style.color='var(--green-t)';status.textContent=`✅ ${display_name.slice(0,60)}...`;}
+  }catch(e){if(status){status.style.color='var(--red)';status.textContent='❌ Erro de conexão.';}}
+  finally{if(btn){btn.textContent='🔍 Buscar';btn.disabled=false;}}
 };
 window.rmRotLoja=async function(cid,id){
   if(!confirm('Remover esta loja do roteiro? Os agendamentos dela também serão removidos.'))return;
@@ -4032,9 +4068,11 @@ function initRoteiroMap(){
   lojas.filter(l=>l.lat&&l.lng).forEach(l=>{
     const isAg=agendadas.has(l.id);
     const cor=isAg?(ROT_COR[l.cls]||'#4338CA'):'#94A3B8';
+    const label=l.numero||(l.nome.match(/\b(\d{1,3})\b/)?.[1])||l.nome.slice(0,2).toUpperCase();
+    const fs=String(label).length<=2?'10px':'8px';
     const icon=L.divIcon({className:'',
-      html:`<div style="background:${cor};color:#fff;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer">${l.pdvs||'?'}</div>`,
-      iconSize:[28,28],iconAnchor:[14,14]});
+      html:`<div style="background:${cor};color:#fff;border:2px solid #fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:${fs};font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer;font-family:Arial,sans-serif;" title="${l.nome}">${label}</div>`,
+      iconSize:[30,30],iconAnchor:[15,15]});
     const m=L.marker([l.lat,l.lng],{icon}).addTo(rotMapInst);
     let dataAg='Sem data';
     Object.entries(agenda).forEach(([k,v])=>{if(v.lojaId===l.id&&!v.cont)dataAg=k.split('-').reverse().join('/');});
@@ -4154,7 +4192,8 @@ window.rotMontarRoteiro=function(cid){
   for(let i=0;i<pontos.length-1;i++){const de=pontos[i],ate=pontos[i+1];const km=rotDistKm(de.lat,de.lng,ate.lat,ate.lng);totalKm+=km;segmentos.push({km,idx:i});
     const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';const l=L.polyline([[de.lat,de.lng],[ate.lat,ate.lng]],{color:cor,weight:3,opacity:.85}).addTo(rotMapInst);l.bindTooltip(`Trecho ${i+1}: ${km.toFixed(1)} km`,{sticky:true});rotLinhas.push(l);}
   paradas.forEach((l,i)=>{
-    const icon=L.divIcon({className:'',html:`<div style="background:${COR_ROT[l.cls]||'#4338CA'};color:#fff;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.3);">${i+1}</div>`,iconSize:[28,28],iconAnchor:[14,14]});
+    const lbl=l.numero||(l.nome.match(/\b(\d{1,3})\b/)?.[1])||String(i+1);const lfs=String(lbl).length<=2?'11px':'9px';
+    const icon=L.divIcon({className:'',html:`<div style="background:${COR_ROT[l.cls]||'#4338CA'};color:#fff;border:2px solid #fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:${lfs};font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.3);font-family:Arial,sans-serif;">${lbl}</div>`,iconSize:[30,30],iconAnchor:[15,15]});
     const m=L.marker([l.lat,l.lng],{icon,zIndexOffset:500}).addTo(rotMapInst);m.bindPopup(`<div style="font-family:sans-serif;min-width:140px;"><div style="font-size:13px;font-weight:700;">${i+1}. ${l.nome}</div><div style="font-size:11px;color:#666;">${l.data?DIAS[new Date(l.data+'T12:00').getDay()]+' '+l.dataFmt:''}</div></div>`);rotLinhas.push(m);});
   rotMapInst.fitBounds([[origem.lat,origem.lng],...paradas.map(l=>[l.lat,l.lng])],{padding:[32,32]});
   const titulo=document.getElementById('rot-dist-titulo');const body=document.getElementById('rot-dist-body');
@@ -4166,7 +4205,7 @@ window.rotMontarRoteiro=function(cid){
     ${paradas.map((l,i)=>{const km=segmentos[i]?.km||0;const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';const dotCor=COR_ROT[l.cls]||'#4338CA';
       return `<div style="padding:3px 12px 3px 22px;font-size:10px;color:var(--text3);display:flex;align-items:center;gap:6px;">↓<span style="font-family:monospace;font-weight:600;color:${cor};">${km.toFixed(1)} km</span></div>
         <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 12px;border-bottom:1px solid var(--border);">
-          <div style="width:28px;height:28px;border-radius:50%;background:${dotCor};color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">${i+1}</div>
+          <div style="width:28px;height:28px;border-radius:50%;background:${dotCor};color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">${l.numero||(l.nome.match(/\b(\d{1,3})\b/)?.[1])||String(i+1)}</div>
           <div style="flex:1;"><div style="font-size:12px;font-weight:600;">${l.nome}</div>
           <div style="font-size:10px;color:var(--text3);">${l.data?DIAS[new Date(l.data+'T12:00').getDay()]+', '+l.dataFmt+' · ':''} ${l.pdvs?l.pdvs+' PDVs':''}</div></div></div>`;}).join('')}
     <div style="padding:10px 12px;font-size:11px;color:var(--text2);text-align:center;">🟢 &lt;5km · 🟠 5–15km · 🔴 &gt;15km</div>`;
