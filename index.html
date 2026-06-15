@@ -3495,7 +3495,7 @@ function renderRoteiro(){
         <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'portrait')">📅 Cal ↕</button>
         <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'landscape')">📅 Cal ↔</button>
         <button class="btn btn-sm" style="background:var(--surface2);" onclick="imprimirRoteiroStatus('${selCid}')">📊 Por status</button>
-        ${rotTab==='map'&&rotOrigens.length?`<button class="btn btn-sm btn-p" onclick="imprimirRoteMapa('${selCid}')">🖨 Imprimir mapa</button>`:''}
+        ${rotTab==='map'?`<button class="btn btn-sm btn-p" onclick="imprimirRoteMapa('${selCid}')">🖨 Imprimir mapa</button>`:''}
         `:''}
       </div>
       ${!selCid?`<div class="card" style="margin:20px;padding:40px;text-align:center;color:var(--text2);">
@@ -3681,11 +3681,6 @@ window.rotMudarAba=function(aba){
 };
 
 window.imprimirRoteMapa=async function(cid){
-  const c=gc(cid); if(!c)return;
-  const mapEl=document.getElementById('rot-mapa');
-  if(!mapEl){alert('Abra o mapa primeiro.');return;}
-  if(!rotOrigens.length){alert('Adicione um ponto de partida para gerar as distâncias.');return;}
-
   const btn=event?.target;
   if(btn){const orig=btn.textContent;btn.textContent='Capturando...';btn.disabled=true;
     setTimeout(()=>{btn.textContent=orig;btn.disabled=false;},4000);}
