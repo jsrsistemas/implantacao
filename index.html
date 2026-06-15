@@ -3495,6 +3495,7 @@ function renderRoteiro(){
         <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'portrait')">📅 Cal ↕</button>
         <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'landscape')">📅 Cal ↔</button>
         <button class="btn btn-sm" style="background:var(--surface2);" onclick="imprimirRoteiroStatus('${selCid}')">📊 Por status</button>
+        ${rotTab==='map'&&rotOrigens.length?`<button class="btn btn-sm btn-p" onclick="imprimirRoteMapa('${selCid}')">🖨 Imprimir mapa</button>`:''}
         `:''}
       </div>
       ${!selCid?`<div class="card" style="margin:20px;padding:40px;text-align:center;color:var(--text2);">
@@ -3679,6 +3680,144 @@ window.rotMudarAba=function(aba){
   }
 };
 
+window.imprimirRoteMapa=async function(cid){
+  const c=gc(cid); if(!c)return;
+  const mapEl=document.getElementById('rot-mapa');
+  if(!mapEl){alert('Abra o mapa primeiro.');return;}
+  if(!rotOrigens.length){alert('Adicione um ponto de partida para gerar as distâncias.');return;}
+
+  const btn=event?.target;
+  if(btn){const orig=btn.textContent;btn.textContent='Capturando...';btn.disabled=true;
+    setTimeout(()=>{btn.textContent=orig;btn.disabled=false;},4000);}
+
+  // Carrega html2canvas dinamicamente
+  if(!window.html2canvas){
+    await new Promise((res,rej)=>{
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+      s.onload=res; s.onerror=rej; document.head.appendChild(s);
+    });
+  }
+
+  // Captura o mapa
+  let mapImg='';
+  try{
+    const canvas=await window.html2canvas(mapEl,{useCORS:true,allowTaint:true,scale:1.5,logging:false});
+    mapImg=canvas.toDataURL('image/png');
+  }catch(e){
+    mapImg=''; // fallback sem imagem
+  }
+
+  // Monta tabela de distâncias
+  const origem=rotOrigens[0];
+  const lojas=getRotLojas(cid).filter(l=>l.lat&&l.lng);
+  const agenda=getRotAgenda(cid);
+  const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
+  const dists=lojas.map(l=>({
+    numero:l.numero||(l.nome.match(/\b(\d{1,3})\b/)?.[1])||'',
+    nome:l.nome, cls:l.cls, pdvs:l.pdvs,
+    km:rotDistKm(origem.lat,origem.lng,l.lat,l.lng),
+    agendada:agendadasIds.has(l.id), feita:l.status==='feito'
+  })).sort((a,b)=>a.km-b.km);
+
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const COR_R={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+  const BG_R={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const totalKm=dists.reduce((s,d)=>s+d.km,0);
+  const mediaKm=dists.length?totalKm/dists.length:0;
+
+  const rows=dists.map((d,i)=>{
+    const cor=d.km<5?'#059669':d.km<15?'#D97706':'#B91C1C';
+    const bgRow=i%2===0?'#fff':'#f9fafb';
+    const badge=d.feita?'✅ Feita':d.agendada?'📅 Agend.':'⏳ Pend.';
+    const badgeCor=d.feita?'#166534':d.agendada?'#4338CA':'#64748b';
+    const badgeBg=d.feita?'#f0fdf4':d.agendada?'#EEF2FF':'#f8fafc';
+    return `<tr style="background:${bgRow};">
+      <td style="padding:5px 8px;font-size:11px;font-weight:700;color:#64748b;text-align:center;border-bottom:1px solid #e2e8f0;">${d.numero||'—'}</td>
+      <td style="padding:5px 8px;font-size:11px;font-weight:500;border-bottom:1px solid #e2e8f0;">${d.nome}</td>
+      <td style="padding:5px 8px;font-size:10px;text-align:center;border-bottom:1px solid #e2e8f0;">
+        <span style="background:${BG_R[d.cls]||'#f1f5f9'};color:${COR_R[d.cls]||'#64748b'};padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600;">${d.cls?.toUpperCase()||'—'}</span>
+      </td>
+      <td style="padding:5px 8px;font-size:11px;font-weight:700;color:${cor};text-align:right;border-bottom:1px solid #e2e8f0;font-family:monospace;">
+        ${d.km.toFixed(1)}<span style="font-size:9px;font-weight:400;color:#94a3b8;"> km</span>
+        <div style="width:48px;height:4px;background:#e2e8f0;border-radius:2px;overflow:hidden;margin-top:2px;margin-left:auto;">
+          <div style="width:${Math.min(100,Math.round((d.km/40)*100))}%;height:4px;background:${cor};border-radius:2px;"></div>
+        </div>
+      </td>
+      <td style="padding:5px 8px;font-size:10px;text-align:center;border-bottom:1px solid #e2e8f0;">
+        <span style="background:${badgeBg};color:${badgeCor};padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600;">${badge}</span>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Mapa — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:20px;background:#fff;}
+  @media print{body{padding:0;}@page{margin:10mm 8mm;size:A4 landscape;}.no-print{display:none!important;}}
+  table{width:100%;border-collapse:collapse;}
+  th{background:#1e293b;color:#fff;padding:6px 8px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+  .layout{display:flex;gap:16px;align-items:flex-start;}
+  .col-mapa{flex:1.4;min-width:0;}
+  .col-tabela{flex:1;min-width:0;}
+  @media print{.layout{display:flex!important;}}</style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
+    <button onclick="window.print()" style="padding:8px 16px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🖨 Imprimir / PDF</button>
+    <button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
+  </div>
+  <!-- Cabeçalho -->
+  <div style="margin-bottom:12px;padding-bottom:10px;border-bottom:3px solid #1e293b;display:flex;justify-content:space-between;align-items:flex-end;">
+    <div>
+      <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:4px;">JSR Sistemas · TrainControl</div>
+      <h1 style="font-size:17px;font-weight:700;">${c.name} — Mapa de Roteiro</h1>
+      <div style="font-size:11px;color:#64748b;margin-top:2px;">📍 Ponto de partida: <strong>${origem.nome}</strong></div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:1px;">Gerado em ${today}</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:6px 12px;">
+        <div style="font-size:18px;font-weight:700;">${dists.length}</div>
+        <div style="font-size:9px;color:#64748b;">lojas</div>
+      </div>
+      <div style="text-align:center;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:6px;padding:6px 12px;">
+        <div style="font-size:18px;font-weight:700;color:#4338CA;">${mediaKm.toFixed(1)}</div>
+        <div style="font-size:9px;color:#4338CA;">km médio</div>
+      </div>
+      <div style="font-size:10px;color:#64748b;display:flex;gap:6px;flex-wrap:wrap;">
+        <span style="background:#dcfce7;color:#166534;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600;">🟢 &lt;5km</span>
+        <span style="background:#FFFBEB;color:#B45309;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600;">🟠 5–15km</span>
+        <span style="background:#FEF2F2;color:#B91C1C;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600;">🔴 &gt;15km</span>
+      </div>
+    </div>
+  </div>
+  <!-- Layout: mapa + tabela -->
+  <div class="layout">
+    <!-- MAPA -->
+    <div class="col-mapa">
+      ${mapImg
+        ?`<img src="${mapImg}" style="width:100%;border-radius:8px;border:1px solid #e2e8f0;" alt="Mapa de roteiro">`
+        :`<div style="background:#f8fafc;border:2px dashed #e2e8f0;border-radius:8px;padding:40px;text-align:center;color:#94a3b8;font-size:13px;">
+          <div style="font-size:32px;margin-bottom:8px;">🗺</div>
+          Imagem do mapa não disponível.<br>Use o sistema para visualização interativa.
+        </div>`}
+    </div>
+    <!-- TABELA DISTÂNCIAS -->
+    <div class="col-tabela">
+      <div style="font-size:11px;font-weight:600;color:#1e293b;margin-bottom:6px;">Distâncias do ponto de partida</div>
+      <table>
+        <thead><tr>
+          <th style="width:30px;">Nº</th>
+          <th>Loja</th>
+          <th style="width:50px;text-align:center;">Reg.</th>
+          <th style="width:70px;text-align:right;">Dist.</th>
+          <th style="width:60px;text-align:center;">Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>
+  <script>setTimeout(()=>window.print(),800);<\/script></body></html>`;
+
+  const w=window.open('','_blank');
+  if(w){w.document.write(html);w.document.close();}
+};
 window.imprimirRoteiroLista=function(cid,orient){
   orient=orient||'portrait';
   const c=gc(cid); if(!c)return;
