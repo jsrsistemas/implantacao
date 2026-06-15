@@ -3494,6 +3494,7 @@ function renderRoteiro(){
         <button class="btn btn-sm btn-i" onclick="imprimirRoteiroLista('${selCid}','landscape')">🖨 Lista ↔</button>
         <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'portrait')">📅 Cal ↕</button>
         <button class="btn btn-sm btn-p" onclick="imprimirRoteiroCal('${selCid}',${mesBase},${anoBase},'landscape')">📅 Cal ↔</button>
+        <button class="btn btn-sm" style="background:var(--surface2);" onclick="imprimirRoteiroStatus('${selCid}')">📊 Por status</button>
         `:''}
       </div>
       ${!selCid?`<div class="card" style="margin:20px;padding:40px;text-align:center;color:var(--text2);">
@@ -3511,12 +3512,46 @@ function renderRoteiro(){
 
       <!-- MAPA -->
       ${selCid&&rotTab==='map'?`
-      <div style="flex:1;display:flex;min-height:0;">
-        <div id="rot-mapa" style="flex:1;min-height:0;"></div>
-        <div style="width:260px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
-          <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;">Distâncias</div>
+      <!-- Painel ponto de partida -->
+      <div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;flex-shrink:0;">
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:300px;">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;">📍 Ponto de partida</div>
+          <div style="display:flex;gap:6px;">
+            <input id="rotOrigNome" placeholder="Nome (ex: JSR, Casa...)" class="inp" style="width:120px;font-size:11px;padding:5px 8px;">
+            <input id="rotOrigEnd" placeholder="Endereço completo..." class="inp" style="flex:1;font-size:11px;padding:5px 8px;"
+              onkeydown="if(event.key==='Enter')rotAdicionarOrigem()">
+            <button class="btn btn-sm btn-p" onclick="rotAdicionarOrigem()" id="rotOrigBtn">🔍 Buscar</button>
+          </div>
+          <div id="rotOrigStatus" style="font-size:11px;color:var(--text3);min-height:14px;"></div>
+        </div>
+        <div style="width:1px;background:var(--border);align-self:stretch;flex-shrink:0;"></div>
+        <div style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:180px;">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;">Pontos salvos</div>
+          <div id="rotOrigemList" style="display:flex;gap:5px;flex-wrap:wrap;min-height:24px;align-items:center;">
+            <span style="font-size:11px;color:var(--text3);">Nenhum ponto ainda</span>
+          </div>
+        </div>
+        <div style="width:1px;background:var(--border);align-self:stretch;flex-shrink:0;"></div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;">Ações</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="rotMostrarTodas()">Todas as lojas</button>
+            <button class="btn btn-sm" onclick="rotLimparLinhas()">Limpar linhas</button>
+            <button class="btn btn-sm btn-p" onclick="rotMontarRoteiro('${selCid}')">🗺 Montar roteiro</button>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;min-height:0;overflow:hidden;">
+        <div id="rot-mapa" style="flex:1;height:100%;min-height:300px;"></div>
+        <div id="rot-dist-panel" style="width:280px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;" id="rot-dist-titulo">Distâncias</div>
           <div style="flex:1;overflow-y:auto;" id="rot-dist-body">
-            <div style="padding:14px;font-size:11px;color:var(--text3);text-align:center;">Clique em uma loja para ver distâncias</div>
+            <div style="padding:16px 12px;font-size:11px;color:var(--text3);text-align:center;line-height:1.8;">
+              <div style="font-size:24px;margin-bottom:8px;">📍</div>
+              1. Digite o endereço de partida<br>
+              2. Clique em 🔍 Buscar<br>
+              3. Clique em <strong>🗺 Montar roteiro</strong>
+            </div>
           </div>
         </div>
       </div>`:''}
@@ -3798,6 +3833,99 @@ window.imprimirRoteiroCal=function(cid,mesBase,anoBase,orient){
   <script>setTimeout(()=>window.print(),600);<\/script></body></html>`;
   const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
 };
+window.imprimirRoteiroStatus=function(cid){
+  const c=gc(cid); if(!c)return;
+  const lojas=getRotLojas(cid);
+  const agenda=getRotAgenda(cid);
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+  const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
+
+  // Data de cada loja no roteiro
+  const lojaData={};
+  Object.entries(agenda).forEach(([k,v])=>{if(!v.cont)lojaData[v.lojaId]=k;});
+
+  const feitas=lojas.filter(l=>l.status==='feito');
+  const agendadas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
+  const pendentes=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id));
+
+  function buildSection(title,items,statusCor,statusBg,statusLabel){
+    if(!items.length)return'';
+    const rows=items.map((l,i)=>{
+      const data=lojaData[l.id];
+      const dataFmt=data?`${dias[new Date(data+'T12:00').getDay()]} ${data.split('-').reverse().join('/')}` :'—';
+      const bg=i%2===0?'#fff':'#f9f9f9';
+      return `<tr style="background:${bg};">
+        <td style="padding:8px 12px;font-size:12px;font-weight:500;border-bottom:1px solid #e2e8f0;">${l.nome}</td>
+        <td style="padding:8px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:center;">${l.pdvs||'—'}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">
+          <span style="background:${BG[l.cls]||'#f1f5f9'};color:${COR[l.cls]||'#64748b'};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${l.cls?.toUpperCase()||'—'}</span>
+        </td>
+        <td style="padding:8px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;">${dataFmt}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">
+          <span style="background:${statusBg};color:${statusCor};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${statusLabel}</span>
+        </td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:24px;page-break-inside:avoid;">
+      <div style="background:${statusBg};border-left:4px solid ${statusCor};padding:8px 14px;margin-bottom:10px;border-radius:0 6px 6px 0;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;font-weight:700;color:${statusCor};">${title}</div>
+        <div style="font-size:11px;color:${statusCor};opacity:.8;">${items.length} loja(s)</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>
+          <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;">Loja</th>
+          <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:50px;">PDVs</th>
+          <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:80px;">Regime</th>
+          <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;width:140px;">Data</th>
+          <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:80px;">Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }
+
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Status — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:28px;background:#fff;}
+  @media print{body{padding:0;}@page{margin:12mm 10mm;size:A4 landscape;}.no-print{display:none!important;}}</style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;">
+    <button onclick="window.print()" style="padding:9px 18px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🖨 Imprimir / PDF</button>
+    <button onclick="window.close()" style="padding:9px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
+  </div>
+  <div style="margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1e293b;display:flex;justify-content:space-between;align-items:flex-end;">
+    <div>
+      <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:5px;">JSR Sistemas · TrainControl</div>
+      <h1 style="font-size:20px;font-weight:700;margin-bottom:3px;">${c.name} — Situação por Status</h1>
+      <div style="font-size:11px;color:#94a3b8;">Gerado em ${today}</div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <div style="text-align:center;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 16px;">
+        <div style="font-size:24px;font-weight:700;color:#166534;">${feitas.length}</div>
+        <div style="font-size:10px;color:#166534;">✅ Feitas</div>
+      </div>
+      <div style="text-align:center;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;padding:10px 16px;">
+        <div style="font-size:24px;font-weight:700;color:#4338CA;">${agendadas.length}</div>
+        <div style="font-size:10px;color:#4338CA;">📅 Agendadas</div>
+      </div>
+      <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;">
+        <div style="font-size:24px;font-weight:700;color:#64748b;">${pendentes.length}</div>
+        <div style="font-size:10px;color:#64748b;">⏳ Pendentes</div>
+      </div>
+      <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;">
+        <div style="font-size:24px;font-weight:700;color:#1e293b;">${lojas.length}</div>
+        <div style="font-size:10px;color:#64748b;">🏪 Total</div>
+      </div>
+    </div>
+  </div>
+  ${buildSection('✅ Implantação Concluída',feitas,'#166534','#f0fdf4','✅ Feita')}
+  ${buildSection('📅 Agendadas no Roteiro',agendadas,'#4338CA','#EEF2FF','📅 Agendada')}
+  ${buildSection('⏳ Pendentes — A Programar',pendentes,'#64748b','#f8fafc','⏳ Pendente')}
+  <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
+};
+
 window.rotAbrirObs=function(cid,key,label){
   const obs=getRot(cid).obs?.[key]||'';
   const mbEl=document.getElementById('mb');
