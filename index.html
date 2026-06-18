@@ -3970,11 +3970,17 @@ window.imprimirRoteiroStatus=function(cid){
 
   const feitas=lojas.filter(l=>l.status==='feito');
   const agendadas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
-  const pendentes=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id));
+  const pendentes=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id)).sort((a,b)=>a.nome.localeCompare(b.nome));
 
   function buildSection(title,items,statusCor,statusBg,statusLabel){
     if(!items.length)return'';
-    const rows=items.map((l,i)=>{
+    // Ordena por data de implantação (sem data fica no final)
+    const ordenados=[...items].sort((a,b)=>{
+      const da=lojaData[a.id]||'9999-99-99';
+      const db=lojaData[b.id]||'9999-99-99';
+      return da.localeCompare(db);
+    });
+    const rows=ordenados.map((l,i)=>{
       const data=lojaData[l.id];
       const dataFmt=data?`${dias[new Date(data+'T12:00').getDay()]} ${data.split('-').reverse().join('/')}` :'—';
       const bg=i%2===0?'#fff':'#f9f9f9';
@@ -4002,13 +4008,33 @@ window.imprimirRoteiroStatus=function(cid){
           <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;">Endereço</th>
           <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:45px;">PDVs</th>
           <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:70px;">Regime</th>
-          <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;width:120px;">Data</th>
+          <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;width:135px;">Data de implantação PDV</th>
           <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:75px;">Status</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>`;
   }
+
+  const assinatura=feitas.length?`<div style="margin-top:40px;padding-top:24px;page-break-inside:avoid;">
+    <div style="display:flex;gap:40px;justify-content:space-between;">
+      <div style="flex:1;text-align:center;">
+        <div style="border-top:1.5px solid #1e293b;padding-top:8px;margin:0 20px;">
+          <div style="font-size:11px;font-weight:600;color:#1e293b;">Assinatura do cliente</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px;">${c.name}</div>
+        </div>
+      </div>
+      <div style="flex:1;text-align:center;">
+        <div style="border-top:1.5px solid #1e293b;padding-top:8px;margin:0 20px;">
+          <div style="font-size:11px;font-weight:600;color:#1e293b;">Data</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px;">___ / ___ / ______</div>
+        </div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:#94a3b8;text-align:center;margin-top:18px;">
+      Confirmo que as ${feitas.length} loja(s) listada(s) acima tiveram a implantação concluída.
+    </div>
+  </div>`:'';
 
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Status — ${c.name}</title>
   <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:28px;background:#fff;}
@@ -4043,6 +4069,7 @@ window.imprimirRoteiroStatus=function(cid){
     </div>
   </div>
   ${buildSection('✅ Implantação Concluída',feitas,'#166534','#f0fdf4','✅ Feita')}
+  ${assinatura}
   ${buildSection('📅 Agendadas no Roteiro',agendadas,'#4338CA','#EEF2FF','📅 Agendada')}
   ${buildSection('⏳ Pendentes — A Programar',pendentes,'#64748b','#f8fafc','⏳ Pendente')}
   <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
