@@ -3359,7 +3359,7 @@ function render(){
 }
 // ── ROTEIRO DE LOJAS ────────────────────────────────────────────────────
 const ROT_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-const ROT_COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C',nova:'#0369A1'};
+const ROT_COR={lr:'#4338CA',sn:'#0E7490',warn:'#B45309',crit:'#B91C1C',nova:'#0369A1'};
 let rotMapInst=null, rotLinhas=[], rotMarcadores={};
 
 function getRot(cid){ return D.roteiros?.[cid]||{}; }
@@ -3455,7 +3455,7 @@ function renderRoteiro(){
     .rot-chip{font-size:11px;font-weight:500;padding:5px 7px;border-radius:5px;cursor:grab;display:flex;align-items:center;gap:5px;user-select:none;border:1px solid transparent;}
     .rot-chip:active{cursor:grabbing;transform:scale(.97);}
     .rot-chip.lr{background:#EEF2FF;color:#4338CA;border-color:#C7D2FE;}
-    .rot-chip.sn{background:#ECFDF5;color:#047857;border-color:#6EE7B7;}
+    .rot-chip.sn{background:#ECFEFF;color:#0E7490;border-color:#67E8F9;}
     .rot-chip.warn{background:#FFFBEB;color:#B45309;border-color:#FCD34D;}
     .rot-chip.crit{background:#FEF2F2;color:#B91C1C;border-color:#FECACA;}
     .rot-chip.nova{background:#F0F9FF;color:#0369A1;border-color:#7DD3FC;}
@@ -3689,8 +3689,8 @@ window.imprimirRoteMapa=function(cid){
   const agenda=getRotAgenda(cid);
   const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
   const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
-  const COR_R={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
-  const BG_R={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const COR_R={lr:'#4338CA',sn:'#0E7490',warn:'#B45309',crit:'#B91C1C'};
+  const BG_R={lr:'#EEF2FF',sn:'#ECFEFF',warn:'#FFFBEB',crit:'#FEF2F2'};
 
   const lojasComCoord=lojas.filter(l=>l.lat&&l.lng);
   const items=lojas.map(l=>({
@@ -3809,8 +3809,8 @@ window.imprimirRoteiroLista=function(cid,orient){
   const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const MESES_FULL=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
-  const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const COR={lr:'#4338CA',sn:'#0E7490',warn:'#B45309',crit:'#B91C1C'};
+  const BG={lr:'#EEF2FF',sn:'#ECFEFF',warn:'#FFFBEB',crit:'#FEF2F2'};
   const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
   const feitas=lojas.filter(l=>l.status==='feito');
   const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
@@ -3883,8 +3883,8 @@ window.imprimirRoteiroCal=function(cid,mesBase,anoBase,orient){
   const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
   const DIAS_CAB=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const MESES_FULL=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  const COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
-  const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const COR={lr:'#4338CA',sn:'#0E7490',warn:'#B45309',crit:'#B91C1C'};
+  const BG={lr:'#EEF2FF',sn:'#ECFEFF',warn:'#FFFBEB',crit:'#FEF2F2'};
   const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
   const todasChaves=new Set([...Object.keys(agenda),...Object.keys(obs)]);
   const mesesSet=new Set();
@@ -3960,8 +3960,8 @@ window.imprimirRoteiroStatus=function(cid){
   const agenda=getRotAgenda(cid);
   const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
   const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
-  const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const COR={lr:'#4338CA',sn:'#0E7490',warn:'#B45309',crit:'#B91C1C'};
+  const BG={lr:'#EEF2FF',sn:'#ECFEFF',warn:'#FFFBEB',crit:'#FEF2F2'};
   const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
 
   // Data de cada loja no roteiro
@@ -4336,7 +4336,7 @@ window.rotMontarRoteiro=function(cid){
   const lojasNoMes=Object.entries(agenda).filter(([k,v])=>k.startsWith(mesStr)&&!v.cont).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>{const l=lojas.find(x=>x.id===v.lojaId);return l?{...l,data:k,dataFmt:k.split('-').reverse().join('/')}:null;}).filter(Boolean);
   const paradas=lojasNoMes.length>0?lojasNoMes:[...lojas].sort((a,b)=>rotDistKm(origem.lat,origem.lng,a.lat,a.lng)-rotDistKm(origem.lat,origem.lng,b.lat,b.lng));
   if(!paradas.length)return alert('Nenhuma loja com coordenadas para montar o roteiro.');
-  const COR_ROT={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};const DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const COR_ROT={lr:'#4338CA',sn:'#0E7490',warn:'#B45309',crit:'#B91C1C'};const DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   let pontos=[{lat:origem.lat,lng:origem.lng}];paradas.forEach(l=>pontos.push({lat:l.lat,lng:l.lng}));
   let totalKm=0;const segmentos=[];
   for(let i=0;i<pontos.length-1;i++){const de=pontos[i],ate=pontos[i+1];const km=rotDistKm(de.lat,de.lng,ate.lat,ate.lng);totalKm+=km;segmentos.push({km,idx:i});
