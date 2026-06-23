@@ -4594,7 +4594,10 @@ window.confirmarReplicar=async function(fromId){
   const src=D.questionarios?.[fromId]?.perguntas||{};
   const dest=D.questionarios?.[destId]?.perguntas||{};
   const destTextos=new Set(Object.values(dest).map(p=>p.texto));
-  const toAdd=Object.values(src).filter(p=>!destTextos.has(p.texto));
+  // Ordena pelo campo order antes de replicar (preserva sequência original)
+  const toAdd=Object.values(src)
+    .sort((a,b)=>(a.order??999)-(b.order??999))
+    .filter(p=>!destTextos.has(p.texto));
   const baseOrder=Object.keys(dest).length;
   const batch={};
   toAdd.forEach((p,i)=>{const newId=gi();batch[newId]={...p,id:newId,order:baseOrder+i};});
