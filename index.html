@@ -214,10 +214,154 @@ const _params = new URLSearchParams(window.location.search);
 const IS_CONFIRM_LINK = !!(_params.get('session') || _params.get('confirm')) && !!(_params.get('rep') || _params.get('proc'));
 
 const IS_CHECKLIST_LINK = !!_params.get('checklist') && !IS_CONFIRM_LINK;
+const IS_PESQUISA_LINK = !!_params.get('pesquisa') && !IS_CONFIRM_LINK && !IS_CHECKLIST_LINK;
 
 if(IS_CONFIRM_LINK){
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('confirm-screen').style.display = 'flex';
+}
+
+if(IS_PESQUISA_LINK){
+  document.getElementById('login-screen').style.display='none';
+  (async()=>{
+    const token=_params.get('pesquisa');
+    const DB_URL='https://implantationjsr-default-rtdb.firebaseio.com';
+    const dbGet=async p=>{const r=await fetch(`${DB_URL}${p}.json`);return r.ok?r.json():null;};
+    // Busca pelo índice público (sem auth)
+    const idx=await dbGet(`/pesquisaIndex/${token}`);
+    const rid=idx?.rid||null;
+    const respObj=rid?await dbGet(`/respostas/${rid}`):null;
+    if(!respObj){
+      document.body.innerHTML=`<div style="min-height:100vh;background:#f5f4f0;display:flex;align-items:center;justify-content:center;padding:24px;"><div style="background:#fff;border-radius:12px;padding:40px;max-width:420px;text-align:center;"><div style="font-size:48px;margin-bottom:16px;">❌</div><h1 style="font-size:18px;margin-bottom:8px;">Link inválido</h1><p style="color:#6b6a65;font-size:13px;">Este link não existe ou foi removido.</p></div></div>`;
+      return;
+    }
+    if(respObj.completed){
+      document.body.innerHTML=`<div style="min-height:100vh;background:#f5f4f0;display:flex;align-items:center;justify-content:center;padding:24px;"><div style="background:#fff;border-radius:12px;padding:40px;max-width:420px;text-align:center;"><div style="font-size:48px;margin-bottom:16px;">✅</div><h1 style="font-size:18px;margin-bottom:8px;">Já respondido!</h1><p style="color:#6b6a65;font-size:13px;">Este formulário já foi preenchido. Obrigado!</p></div></div>`;
+      return;
+    }
+    // Registra abertura
+    const agora=new Date().toISOString();
+    if(!respObj.openedAt){
+      await fetch(`${DB_URL}/respostas/${rid}.json`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({openedAt:agora,openCount:1})});
+    } else {
+      await fetch(`${DB_URL}/respostas/${rid}.json`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({openCount:(respObj.openCount||1)+1,lastOpenedAt:agora})});
+    }
+    // Carrega questionário
+    const qid=respObj.questionarioId;
+    const q=await dbGet(`/questionarios/${qid}`);
+    if(!q){document.body.innerHTML=`<div style="min-height:100vh;background:#f5f4f0;display:flex;align-items:center;justify-content:center;"><div style="background:#fff;border-radius:12px;padding:40px;max-width:420px;text-align:center;"><p>Questionário não encontrado.</p></div></div>`;return;}
+    const perguntas=Object.values(q.perguntas||{}).sort((a,b)=>(a.order??999)-(b.order??999));
+    const prospect=await dbGet(`/prospects/${respObj.prospectId}`);
+
+    document.body.innerHTML=`
+    <div style="min-height:100vh;background:#f5f4f0;padding:24px;">
+      <div style="max-width:640px;margin:0 auto;">
+        <div style="background:#fff;border:1px solid #e0ddd4;border-radius:12px;padding:28px;margin-bottom:16px;">
+          <div style="font-size:9px;letter-spacing:2.5px;color:#6b6a65;text-transform:uppercase;margin-bottom:10px;">JSR Sistemas</div>
+          <h1 style="font-size:20px;font-weight:500;margin-bottom:6px;">${q.nome||'Solicitação de proposta'}</h1>
+          ${prospect?.nome?`<div style="font-size:13px;color:#6b6a65;">Para: <strong>${prospect.nome}</strong></div>`:''}
+          ${q.descricao?`<p style="font-size:13px;color:#6b6a65;margin-top:8px;line-height:1.6;">${q.descricao}</p>`:''}
+        </div>
+
+        ${q.usarLgpd!==false?`
+        <div style="background:#fff;border:1px solid #e0ddd4;border-radius:12px;padding:20px;margin-bottom:12px;">
+          <div style="font-size:13px;font-weight:600;margin-bottom:10px;">🔒 Privacidade e Proteção de Dados (LGPD)</div>
+          <p style="font-size:12px;color:#6b6a65;line-height:1.7;margin-bottom:12px;">
+            As informações fornecidas neste formulário serão utilizadas exclusivamente pela <strong>JSR Sistemas</strong> para elaboração de proposta comercial personalizada. Seus dados não serão compartilhados com terceiros e serão tratados em conformidade com a <strong>Lei Geral de Proteção de Dados (Lei nº 13.709/2018 — LGPD)</strong>.
+          </p>
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+            <input type="checkbox" id="lgpd-check" style="width:18px;height:18px;margin-top:1px;accent-color:#185fa5;flex-shrink:0;" required>
+            <span style="font-size:12px;color:#1a1a18;">Declaro que li e concordo com o uso das minhas informações para os fins descritos acima.</span>
+          </label>
+        </div>`:''}
+
+        <form id="pesq-form" style="display:flex;flex-direction:column;gap:12px;">
+          ${perguntas.map((p,i)=>`
+          <div style="background:#fff;border:1px solid #e0ddd4;border-radius:12px;padding:20px;" id="bloco-${p.id}">
+            <div style="font-size:13px;font-weight:500;margin-bottom:12px;line-height:1.5;">
+              <span style="color:#0369A1;font-weight:700;margin-right:6px;">${i+1}.</span>${p.texto}
+              ${p.obrigatorio?'<span style="color:#B91C1C;margin-left:4px;">*</span>':''}
+            </div>
+            ${p.tipo==='livre'?`
+              <textarea name="${p.id}" rows="3" placeholder="Sua resposta..." ${p.obrigatorio?'required':''}
+                style="width:100%;border:1px solid #c8c5ba;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;outline:none;"
+                onfocus="this.style.borderColor='#185fa5'" onblur="this.style.borderColor='#c8c5ba'"></textarea>
+            `:p.tipo==='numero'?`
+              <input type="number" name="${p.id}" placeholder="0" ${p.obrigatorio?'required':''}
+                style="width:100%;border:1px solid #c8c5ba;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;outline:none;"
+                onfocus="this.style.borderColor='#185fa5'" onblur="this.style.borderColor='#c8c5ba'">
+            `:p.tipo==='data'?`
+              <input type="date" name="${p.id}" ${p.obrigatorio?'required':''}
+                style="width:100%;border:1px solid #c8c5ba;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;outline:none;"
+                onfocus="this.style.borderColor='#185fa5'" onblur="this.style.borderColor='#c8c5ba'">
+              <div style="font-size:11px;color:#9b9a95;margin-top:4px;">Selecione uma data no calendário</div>
+            `:p.tipo==='multipla'?`
+              <div style="display:flex;flex-direction:column;gap:8px;">
+                ${(p.opcoes||[]).map(op=>`
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1px solid #e0ddd4;border-radius:8px;transition:background .15s;"
+                  onmouseover="this.style.background='#f5f4f0'" onmouseout="this.style.background=''">
+                  <input type="${p.multipla_selecao?'checkbox':'radio'}" name="${p.id}" value="${op}" ${p.obrigatorio&&!p.multipla_selecao?'required':''}
+                    style="width:16px;height:16px;cursor:pointer;accent-color:#185fa5;">
+                  <span style="font-size:13px;">${op}</span>
+                </label>`).join('')}
+              </div>
+            `:p.tipo==='escala'?`
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                ${Array.from({length:(p.escala_max||10)-(p.escala_min||1)+1},(_,i)=>i+(p.escala_min||1)).map(n=>`
+                <label style="cursor:pointer;">
+                  <input type="radio" name="${p.id}" value="${n}" style="display:none;" ${p.obrigatorio?'required':''}>
+                  <div onclick="this.previousElementSibling.click();document.querySelectorAll('[data-esc=${p.id}]').forEach(x=>{x.style.background='';x.style.color='';});this.style.background='#185fa5';this.style.color='#fff';"
+                    data-esc="${p.id}"
+                    style="width:38px;height:38px;border:2px solid #e0ddd4;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;cursor:pointer;">${n}</div>
+                </label>`).join('')}
+                <div style="display:flex;justify-content:space-between;width:100%;font-size:10px;color:#6b6a65;margin-top:4px;">
+                  <span>${p.escala_label_min||'Muito ruim'}</span><span>${p.escala_label_max||'Excelente'}</span>
+                </div>
+              </div>
+            `:''}
+          </div>`).join('')}
+
+          <button type="submit" style="padding:14px;background:#1a1a18;color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:500;cursor:pointer;font-family:inherit;margin-top:4px;">
+            Enviar informações
+          </button>
+        </form>
+        <p style="font-size:11px;color:#9b9a95;text-align:center;margin-top:16px;">JSR Sistemas · Dados protegidos pela LGPD</p>
+      </div>
+    </div>`;
+
+    document.getElementById('pesq-form').onsubmit=async(e)=>{
+      e.preventDefault();
+      // Verifica LGPD
+      const lgpdCheck=document.getElementById('lgpd-check');
+      if(lgpdCheck&&!lgpdCheck.checked){
+        lgpdCheck.style.outline='2px solid #B91C1C';
+        lgpdCheck.scrollIntoView({behavior:'smooth',block:'center'});
+        return;
+      }
+      const fd=new FormData(e.target);
+      const answers={};
+      perguntas.forEach(p=>{
+        if(p.tipo==='multipla'&&p.multipla_selecao){
+          answers[p.id]=[...document.querySelectorAll(`[name="${p.id}"]:checked`)].map(x=>x.value);
+        } else {
+          answers[p.id]=fd.get(p.id)||'';
+        }
+      });
+      const btn=e.target.querySelector('button[type=submit]');
+      btn.textContent='Enviando...';btn.disabled=true;
+      const completedAt=new Date().toISOString();
+      await fetch(`${DB_URL}/respostas/${rid}.json`,{method:'PATCH',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({answers,completed:true,completedAt})});
+      await fetch(`${DB_URL}/pesquisaIndex/${token}.json`,{method:'DELETE'});
+      document.body.innerHTML=`<div style="min-height:100vh;background:#f5f4f0;display:flex;align-items:center;justify-content:center;padding:24px;">
+        <div style="background:#fff;border-radius:12px;padding:48px;max-width:420px;text-align:center;">
+          <div style="width:72px;height:72px;background:#eaf3de;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;"><svg width="36" height="36" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#27500a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h1 style="font-size:20px;font-weight:500;margin-bottom:10px;color:#1a1a18;">Informações enviadas!</h1>
+          <p style="color:#6b6a65;font-size:14px;line-height:1.7;">Recebemos suas informações com sucesso.<br>Em breve nossa equipe entrará em contato com uma proposta personalizada.</p>
+          <div style="margin-top:24px;font-size:11px;color:#9b9a95;">JSR Sistemas · Dados protegidos pela LGPD</div>
+        </div></div>`;
+    };
+  })();
 }
 
 if(IS_CHECKLIST_LINK){
@@ -587,7 +731,7 @@ onAuthStateChanged(auth, user => {
       // Verifica se ainda é o mesmo usuário logado (evita race condition)
       if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
       D = snap.val() || {};
-      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.checklistTemplates = D.checklistTemplates||{}; D.clientChecklists = D.clientChecklists||{}; D.roteiros = D.roteiros||{};
+      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.checklistTemplates = D.checklistTemplates||{}; D.clientChecklists = D.clientChecklists||{}; D.roteiros = D.roteiros||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{};
       currentProfile = D.users[user.uid];
       if (!currentProfile) {
         if (Object.keys(D.users).length === 0) {
@@ -643,7 +787,7 @@ function renderSidebar(){
   ];
   if(p.role==='admin')nav.push({id:'catalogo',ic:'☷',l:'Catálogo'});
   nav.push({id:'checklist',ic:'☑',l:'Checklist'});
-  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'roteiro',ic:'⊞',l:'Roteiro de Lojas'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
+  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'roteiro',ic:'⊞',l:'Roteiro de Lojas'},{id:'prospects',ic:'◎',l:'Prospects'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
   // Atualiza título na barra mobile
   const cur=nav.find(n=>n.id===S.view);
   const mobTitle=document.getElementById('mob-view-title');
@@ -1529,94 +1673,6 @@ function renderRelatorios(){
     }).join('')}`;
   }
 
-  // ── COBERTURA DE TREINAMENTOS ──
-  function relCobertura(){
-    const cats=Object.values(D.catalog||{}).sort((a,b)=>{
-      const ca=a.category||'Zzz', cb=b.category||'Zzz';
-      return ca.localeCompare(cb)||a.name.localeCompare(b.name);
-    });
-    if(!cats.length) return `<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum item no catálogo ainda.</div>`;
-    const cov=coverageForClient(selCid);
-    const byCateg={};
-    cats.forEach(cat=>{const g=cat.category||'Sem categoria';if(!byCateg[g])byCateg[g]=[];byCateg[g].push(cat);});
-    const nConcluido=cats.filter(cat=>covStatus(cov,cat)==='concluido').length;
-    const nAgendado=cats.filter(cat=>covStatus(cov,cat)==='agendado').length;
-    const nPendente=cats.length-nConcluido-nAgendado;
-    const pct=cats.length>0?Math.round(nConcluido/cats.length*100):0;
-
-    let html=`<div class="card" style="padding:16px 20px;margin-bottom:16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-        <div>
-          <div style="font-size:15px;font-weight:500;">${c?.name||''} — Cobertura de Treinamentos</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:2px;">${cats.length} processo(s) no catálogo</div>
-        </div>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-          <div style="text-align:center;padding:8px 12px;background:var(--green-bg);border-radius:var(--r);">
-            <div style="font-size:22px;font-weight:700;color:var(--green-t);">${nConcluido}</div>
-            <div style="font-size:10px;color:var(--green-t);">✅ Concluídos</div>
-          </div>
-          <div style="text-align:center;padding:8px 12px;background:var(--amber-bg);border-radius:var(--r);">
-            <div style="font-size:22px;font-weight:700;color:var(--amber);">${nAgendado}</div>
-            <div style="font-size:10px;color:var(--amber);">🟡 Agendados</div>
-          </div>
-          <div style="text-align:center;padding:8px 12px;background:var(--surface2);border-radius:var(--r);">
-            <div style="font-size:22px;font-weight:700;color:var(--text3);">${nPendente}</div>
-            <div style="font-size:10px;color:var(--text3);">⬜ Pendentes</div>
-          </div>
-          <div style="text-align:center;padding:8px 16px;background:var(--blue-bg);border-radius:var(--r);">
-            <div style="font-size:28px;font-weight:700;color:var(--blue-t);">${pct}%</div>
-            <div style="font-size:10px;color:var(--blue-t);">Concluído</div>
-          </div>
-        </div>
-      </div>
-      <div style="height:10px;background:var(--border);border-radius:5px;overflow:hidden;">
-        <div style="height:100%;width:${pct}%;background:var(--green-t);border-radius:5px;"></div>
-      </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:10px;">
-        <button class="btn btn-sm btn-p" onclick="imprimirCobertura('${selCid}')">🖨 Imprimir relatório</button>
-      </div>
-    </div>`;
-
-    Object.entries(byCateg).forEach(([catNome,items])=>{
-      const nOk=items.filter(cat=>covStatus(cov,cat)==='concluido').length;
-      const nAg=items.filter(cat=>covStatus(cov,cat)==='agendado').length;
-      const nPen=items.length-nOk-nAg;
-      const pctG=items.length>0?Math.round(nOk/items.length*100):0;
-      html+=`<div class="card" style="margin-bottom:12px;overflow:hidden;">
-        <div style="padding:10px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
-          <div style="font-size:13px;font-weight:600;">📂 ${catNome}</div>
-          <div style="display:flex;gap:8px;align-items:center;font-size:11px;">
-            <span style="color:var(--green-t);font-weight:500;">✅ ${nOk}</span>
-            <span style="color:var(--amber);">🟡 ${nAg}</span>
-            <span style="color:var(--text3);">⬜ ${nPen}</span>
-            <span style="background:var(--blue-bg);color:var(--blue-t);padding:2px 10px;border-radius:20px;font-weight:600;">${pctG}%</span>
-          </div>
-        </div>
-        <div style="overflow-x:auto;"><table class="tbl" style="min-width:400px;">
-          <thead><tr><th style="width:55%;">Processo / Treinamento</th><th>Status</th><th>Data de realização</th></tr></thead>
-          <tbody>`;
-      items.forEach(cat=>{
-        const st=covStatus(cov,cat);
-        let dataRealizacao='—';
-        ss.forEach(s=>{Object.values(s.processes||{}).forEach(p=>{
-          if((p.catalogId===cat.id||p.name.trim().toLowerCase()===cat.name.trim().toLowerCase())
-            &&(p.status==='realizado'||p.status==='video')){
-            if(dataRealizacao==='—')dataRealizacao=fdws(s.date);
-          }
-        });});
-        const info=st==='concluido'?{bg:'var(--green-bg)',cor:'var(--green-t)',ic:'✅',lb:'Concluído'}:
-                   st==='agendado' ?{bg:'var(--amber-bg)',cor:'var(--amber)',ic:'🟡',lb:'Agendado'}:
-                                   {bg:'var(--surface2)',cor:'var(--text3)',ic:'⬜',lb:'Pendente'};
-        html+=`<tr><td style="font-size:13px;">${cat.name}</td>
-          <td><span style="background:${info.bg};color:${info.cor};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;">${info.ic} ${info.lb}</span></td>
-          <td style="font-size:12px;color:var(--text2);">${st==='concluido'?dataRealizacao:'—'}</td>
-        </tr>`;
-      });
-      html+=`</tbody></table></div></div>`;
-    });
-    return html;
-  }
-
   return `<div class="ph">
     <div><h2>Relatórios</h2><p>Acompanhamento por categoria e instrutor</p></div>
     <button class="btn btn-p" onclick="printRelatorio()">📄 Exportar PDF</button>
@@ -1630,117 +1686,14 @@ function renderRelatorios(){
     <div style="display:flex;border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;">
       <button class="btn" style="border:none;border-radius:0;padding:7px 16px;${selType==='categoria'?'background:var(--text);color:#fff;':''}" data-action="relType" data-val="categoria">Por Categoria</button>
       <button class="btn" style="border:none;border-radius:0;border-left:1px solid var(--border2);padding:7px 16px;${selType==='instrutor'?'background:var(--text);color:#fff;':''}" data-action="relType" data-val="instrutor">Por Instrutor</button>
-      <button class="btn" style="border:none;border-radius:0;border-left:1px solid var(--border2);padding:7px 16px;${selType==='cobertura'?'background:var(--text);color:#fff;':''}" data-action="relType" data-val="cobertura">📋 Cobertura</button>
     </div>
   </div>
 
   ${!selCid?'<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Selecione um cliente para gerar o relatório.</div>':
-    selType==='cobertura'?relCobertura():
     ss.length===0?'<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum dia de treinamento cadastrado para este cliente.</div>':
     selType==='categoria'?relCategoria():relInstrutor()
   }`;
 }
-
-window.imprimirCobertura=function(cid){
-  const c=gc(cid); if(!c)return;
-  const cats=Object.values(D.catalog||{}).sort((a,b)=>{
-    const ca=a.category||'Zzz',cb=b.category||'Zzz';
-    return ca.localeCompare(cb)||a.name.localeCompare(b.name);
-  });
-  const ss=Object.values(D.sessions||{}).filter(s=>s.clientId===cid);
-  const cov=coverageForClient(cid);
-  const byCateg={};
-  cats.forEach(cat=>{const g=cat.category||'Sem categoria';if(!byCateg[g])byCateg[g]=[];byCateg[g].push(cat);});
-  const nConcluido=cats.filter(cat=>covStatus(cov,cat)==='concluido').length;
-  const nAgendado=cats.filter(cat=>covStatus(cov,cat)==='agendado').length;
-  const nPendente=cats.length-nConcluido-nAgendado;
-  const pct=cats.length>0?Math.round(nConcluido/cats.length*100):0;
-  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
-
-  const sections=Object.entries(byCateg).map(([catNome,items])=>{
-    const nOk=items.filter(cat=>covStatus(cov,cat)==='concluido').length;
-    const pctG=items.length>0?Math.round(nOk/items.length*100):0;
-    const rows=items.map((cat,i)=>{
-      const st=covStatus(cov,cat);
-      let dataR='—';
-      ss.forEach(s=>{Object.values(s.processes||{}).forEach(p=>{
-        if((p.catalogId===cat.id||p.name.trim().toLowerCase()===cat.name.trim().toLowerCase())
-          &&(p.status==='realizado'||p.status==='video')){
-          if(dataR==='—')dataR=fdws(s.date);
-        }
-      });});
-      const bg=i%2===0?'#fff':'#f9fafb';
-      const stLabel=st==='concluido'?'✅ Concluído':st==='agendado'?'🟡 Agendado':'⬜ Pendente';
-      const stCor=st==='concluido'?'#166534':st==='agendado'?'#92400e':'#64748b';
-      const stBg=st==='concluido'?'#f0fdf4':st==='agendado'?'#FFFBEB':'#f8fafc';
-      return `<tr style="background:${bg};">
-        <td style="padding:7px 12px;font-size:12px;border-bottom:1px solid #e2e8f0;">${cat.name}</td>
-        <td style="padding:7px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">
-          <span style="background:${stBg};color:${stCor};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">${stLabel}</span>
-        </td>
-        <td style="padding:7px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;">${st==='concluido'?dataR:'—'}</td>
-      </tr>`;
-    }).join('');
-    return `<div style="margin-bottom:20px;page-break-inside:avoid;">
-      <div style="background:#f1f5f9;padding:7px 14px;margin-bottom:6px;border-left:4px solid #1e293b;display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-size:12px;font-weight:700;">📂 ${catNome}</div>
-        <div style="font-size:11px;color:#64748b;">${nOk}/${items.length} concluídos · ${pctG}%</div>
-      </div>
-      <table style="width:100%;border-collapse:collapse;">
-        <thead><tr>
-          <th style="background:#1e293b;color:#fff;padding:6px 12px;font-size:10px;font-weight:600;text-transform:uppercase;text-align:left;">Processo / Treinamento</th>
-          <th style="background:#1e293b;color:#fff;padding:6px 8px;font-size:10px;font-weight:600;text-transform:uppercase;text-align:center;width:110px;">Status</th>
-          <th style="background:#1e293b;color:#fff;padding:6px 12px;font-size:10px;font-weight:600;text-transform:uppercase;text-align:left;width:130px;">Data realização</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-  }).join('');
-
-  const barW=Math.round(pct*4.5); // px em 450px max
-  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Cobertura — ${c.name}</title>
-  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:28px;}
-  @media print{body{padding:0;}@page{margin:12mm 10mm;size:A4 portrait;}.no-print{display:none!important;}}</style></head><body>
-  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;">
-    <button onclick="window.print()" style="padding:8px 18px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🖨 Imprimir / PDF</button>
-    <button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
-  </div>
-  <div style="margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1e293b;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;">
-    <div>
-      <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:5px;">JSR Sistemas · TrainControl</div>
-      <h1 style="font-size:19px;font-weight:700;margin-bottom:3px;">${c.name}</h1>
-      <div style="font-size:13px;color:#64748b;">Relatório de Cobertura de Treinamentos</div>
-      <div style="font-size:10px;color:#94a3b8;margin-top:2px;">Gerado em ${today}</div>
-    </div>
-    <div style="display:flex;gap:10px;align-items:center;">
-      <div style="text-align:center;padding:8px 14px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;">
-        <div style="font-size:20px;font-weight:700;color:#166534;">${nConcluido}</div>
-        <div style="font-size:9px;color:#166534;">✅ Concluídos</div>
-      </div>
-      <div style="text-align:center;padding:8px 14px;background:#FFFBEB;border:1px solid #FCD34D;border-radius:8px;">
-        <div style="font-size:20px;font-weight:700;color:#92400e;">${nAgendado}</div>
-        <div style="font-size:9px;color:#92400e;">🟡 Agendados</div>
-      </div>
-      <div style="text-align:center;padding:8px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">
-        <div style="font-size:20px;font-weight:700;color:#64748b;">${nPendente}</div>
-        <div style="font-size:9px;color:#64748b;">⬜ Pendentes</div>
-      </div>
-      <div style="text-align:center;padding:10px 18px;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;">
-        <div style="font-size:26px;font-weight:700;color:#4338CA;">${pct}%</div>
-        <div style="font-size:9px;color:#4338CA;">Concluído</div>
-      </div>
-    </div>
-  </div>
-  <div style="margin-bottom:20px;">
-    <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;margin-bottom:4px;"><span>Progresso geral</span><span>${nConcluido} de ${cats.length} processos</span></div>
-    <div style="height:12px;background:#e2e8f0;border-radius:6px;overflow:hidden;">
-      <div style="height:100%;width:${pct}%;background:#166534;border-radius:6px;"></div>
-    </div>
-  </div>
-  ${sections}
-  <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
-  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
-};
 
 window.printRelatorio=function(){
   const content=document.getElementById('content').innerHTML;
@@ -2283,6 +2236,7 @@ function openModal(type,data={}){
   document.getElementById('ov').classList.add('open');
 }
 function closeModal(){document.getElementById('ov').classList.remove('open');document.getElementById('mb').innerHTML='';}
+window.closeModal=closeModal;
 window.updateBatchBar=function(sid){
   const cbs=[...document.querySelectorAll(`.proc-cb[data-sid="${sid}"]`)];
   const selected=cbs.filter(cb=>cb.checked);
@@ -3399,6 +3353,7 @@ function render(){
   else if(S.view==='clientes')ct.innerHTML=renderClientes();
   else if(S.view==='admin')ct.innerHTML=renderAdmin();
   else if(S.view==='roteiro'){ct.innerHTML=renderRoteiro();setTimeout(initRoteiroMap,80);}
+  else if(S.view==='prospects')ct.innerHTML=renderProspects();
   else if(S.view==='checklist'){ct.innerHTML=renderChecklist();setTimeout(initChecklistDragDrop,50);}
   else if(S.view==='relatorios')ct.innerHTML=renderRelatorios();
 }
@@ -3424,35 +3379,73 @@ function renderRoteiro(){
   const obs=getRotObs(selCid);
   const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
   const feitas=lojas.filter(l=>l.status==='feito');
-  const agendadasLojas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
   const aprogramar=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id));
+  const agendadasLojas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
   const livres=aprogramar;
   const now=new Date();
   const mesBase=S.rotMes??now.getMonth();
   const anoBase=S.rotAno??now.getFullYear();
 
+  // Constrói sidebar HTML de forma segura (evita template literals aninhados)
   function buildSidebar(){
     if(!selCid) return '<div style="flex:1;overflow-y:auto;padding:10px;"><div style="font-size:12px;color:var(--text2);">Selecione um cliente acima</div></div>';
-    let s=`<div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:5px;">
-      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--green-bg);"><div style="font-size:15px;font-weight:700;color:var(--green-t);">${feitas.length}</div><div style="font-size:9px;color:var(--green-t);">✅ Feitas</div></div>
-      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--blue-bg);"><div style="font-size:15px;font-weight:700;color:var(--blue-t);">${agendadasLojas.length}</div><div style="font-size:9px;color:var(--blue-t);">📅 Agendadas</div></div>
-      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--surface2);"><div style="font-size:15px;font-weight:700;color:var(--text2);">${aprogramar.length}</div><div style="font-size:9px;color:var(--text2);">⏳ Pendentes</div></div>
+    let s='';
+    // Stats
+    s+=`<div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:5px;">
+      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--green-bg);">
+        <div style="font-size:15px;font-weight:700;color:var(--green-t);">${feitas.length}</div>
+        <div style="font-size:9px;color:var(--green-t);">✅ Feitas</div>
+      </div>
+      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--blue-bg);">
+        <div style="font-size:15px;font-weight:700;color:var(--blue-t);">${agendadasLojas.length}</div>
+        <div style="font-size:9px;color:var(--blue-t);">📅 Agendadas</div>
+      </div>
+      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--surface2);">
+        <div style="font-size:15px;font-weight:700;color:var(--text2);">${aprogramar.length}</div>
+        <div style="font-size:9px;color:var(--text2);">⏳ Pendentes</div>
+      </div>
     </div>`;
     s+='<div style="flex:1;overflow-y:auto;padding:10px;">';
-    if(aprogramar.length){
+    // A programar
+    if(aprogramar.length>0){
       s+=`<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">⏳ A programar</div>`;
-      aprogramar.forEach(l=>{s+=`<div class="rot-chip ${l.cls||'lr'}" draggable="true" ondragstart="rotDragStart(event,'${l.id}',null)" ondragend="rotDragEnd(event)" style="margin-bottom:4px;"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(l.nome)}</span><span style="font-size:9px;opacity:.6;">${l.pdvs>0?l.pdvs+'p':''}</span></div>`;});
+      aprogramar.forEach(l=>{
+        s+=`<div class="rot-chip ${l.cls||'lr'}" draggable="true" ondragstart="rotDragStart(event,'${l.id}',null)" ondragend="rotDragEnd(event)" style="margin-bottom:4px;">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(l.nome)}</span>
+          <span style="font-size:9px;opacity:.6;">${l.pdvs>0?l.pdvs+'p':''}</span>
+        </div>`;
+      });
     }
-    if(agendadasLojas.length){
+    // Agendadas
+    if(agendadasLojas.length>0){
       s+=`<div style="font-size:10px;font-weight:700;color:var(--blue-t);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 5px;">📅 Agendadas</div>`;
-      agendadasLojas.forEach(l=>{s+=`<div style="display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--blue-bg);border-radius:var(--r);margin-bottom:3px;font-size:11px;"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--blue-t);">${esc(l.nome)}</span><button title="Marcar como feita" onclick="rotMarcarFeita('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--green-t);cursor:pointer;font-size:16px;padding:0;line-height:1;font-weight:700;">✓</button></div>`;});
+      agendadasLojas.forEach(l=>{
+        s+=`<div style="display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--blue-bg);border-radius:var(--r);margin-bottom:3px;font-size:11px;">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--blue-t);">${esc(l.nome)}</span>
+          <button title="Marcar como feita" onclick="rotMarcarFeita('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--green-t);cursor:pointer;font-size:15px;padding:0;line-height:1;">✓</button>
+        </div>`;
+      });
     }
-    if(feitas.length){
+    // Feitas
+    if(feitas.length>0){
       s+=`<div style="font-size:10px;font-weight:700;color:var(--green-t);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 5px;">✅ Concluídas</div>`;
-      feitas.forEach(l=>{s+=`<div style="display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--green-bg);border-radius:var(--r);margin-bottom:3px;font-size:11px;border:1px solid #86efac;"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--green-t);text-decoration:line-through;opacity:.8;">${esc(l.nome)}</span><button title="Desfazer" onclick="rotDesmarcarFeita('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:12px;padding:0;">↩</button></div>`;});
+      feitas.forEach(l=>{
+        s+=`<div style="display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--green-bg);border-radius:var(--r);margin-bottom:3px;font-size:11px;border:1px solid #86efac;">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--green-t);text-decoration:line-through;opacity:.8;">${esc(l.nome)}</span>
+          <button title="Desfazer" onclick="rotDesmarcarFeita('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:11px;padding:0;line-height:1;">↩</button>
+        </div>`;
+      });
     }
-    s+=`<hr style="border:none;border-top:1px solid var(--border);margin:10px 0;"><button class="btn btn-sm btn-p" style="width:100%;margin-bottom:4px;" onclick="openAddLojaModal('${selCid}')">+ Nova loja</button>`;
-    lojas.forEach(l=>{s+=`<div style="display:flex;align-items:center;gap:5px;padding:4px 8px;background:var(--surface2);border-radius:var(--r);margin-bottom:2px;font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:${ROT_COR[l.cls]||'#94A3B8'};flex-shrink:0;"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(l.nome)}</span><button onclick="openAddLojaModal('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--blue-t);cursor:pointer;font-size:11px;padding:0 1px;">✎</button><button onclick="rmRotLoja('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--red);cursor:pointer;font-size:13px;padding:0 1px;">×</button></div>`;});
+    s+=`<hr style="border:none;border-top:1px solid var(--border);margin:10px 0;">
+    <button class="btn btn-sm btn-p" style="width:100%;margin-bottom:4px;" onclick="openAddLojaModal('${selCid}')">+ Nova loja</button>`;
+    lojas.forEach(l=>{
+      s+=`<div style="display:flex;align-items:center;gap:5px;padding:4px 8px;background:var(--surface2);border-radius:var(--r);margin-bottom:2px;font-size:11px;">
+        <span style="width:7px;height:7px;border-radius:50%;background:${ROT_COR[l.cls]||'#94A3B8'};flex-shrink:0;"></span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(l.nome)}</span>
+        <button onclick="openAddLojaModal('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--blue-t);cursor:pointer;font-size:11px;padding:0 1px;">✎</button>
+        <button onclick="rmRotLoja('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--red);cursor:pointer;font-size:13px;padding:0 1px;">×</button>
+      </div>`;
+    });
     s+='</div>';
     return s;
   }
@@ -3462,7 +3455,7 @@ function renderRoteiro(){
     .rot-chip{font-size:11px;font-weight:500;padding:5px 7px;border-radius:5px;cursor:grab;display:flex;align-items:center;gap:5px;user-select:none;border:1px solid transparent;}
     .rot-chip:active{cursor:grabbing;transform:scale(.97);}
     .rot-chip.lr{background:#EEF2FF;color:#4338CA;border-color:#C7D2FE;}
-    .rot-chip.sn{background:#ECFEFF;color:#0E7490;border-color:#67E8F9;}
+    .rot-chip.sn{background:#ECFDF5;color:#047857;border-color:#6EE7B7;}
     .rot-chip.warn{background:#FFFBEB;color:#B45309;border-color:#FCD34D;}
     .rot-chip.crit{background:#FEF2F2;color:#B91C1C;border-color:#FECACA;}
     .rot-chip.nova{background:#F0F9FF;color:#0369A1;border-color:#7DD3FC;}
@@ -3473,6 +3466,7 @@ function renderRoteiro(){
     .rot-dia.has-chip{border-color:#C9C4BC;}
     .rot-dia.feita{background:#f0fdf4;border-color:#86efac;}
   </style>
+
   <div style="display:flex;height:calc(100vh - 120px);overflow:hidden;">
     <!-- SIDEBAR -->
     <div style="width:230px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
@@ -3481,10 +3475,8 @@ function renderRoteiro(){
 
     <!-- ÁREA PRINCIPAL -->
     <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
-
-      <!-- Barra de controles -->
       <div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0;">
-        <select class="inp" style="width:auto;font-size:13px;font-weight:500;" onchange="setS('rotCid',this.value)">
+        <select class="inp" style="width:auto;font-size:13px;font-weight:500;" data-action="rotCid">
           <option value="">⚠️ Selecione um cliente...</option>
           ${cs.map(c=>`<option value="${c.id}"${selCid===c.id?' selected':''}>${c.name}</option>`).join('')}
         </select>
@@ -3496,7 +3488,7 @@ function renderRoteiro(){
         <button class="btn btn-sm" onclick="rotMesAnterior()">◀</button>
         <span style="font-size:13px;font-weight:500;min-width:120px;text-align:center;">${ROT_MESES[mesBase]} ${anoBase}</span>
         <button class="btn btn-sm" onclick="rotMesProximo()">▶</button>
-        <span style="font-size:12px;color:var(--text2);">${Object.keys(agenda).filter(k=>!agenda[k]?.cont).length} agendados · ${livres.length} restantes</span>
+        <span style="font-size:12px;color:var(--text2);">${feitas.length}✅ · ${agendadasLojas.length}📅 · ${aprogramar.length}⏳</span>
         <button class="btn btn-sm" onclick="exportRotCSV('${selCid}')">⬇ CSV</button>
         <button class="btn btn-sm btn-i" onclick="imprimirRoteiroLista('${selCid}','portrait')">🖨 Lista ↕</button>
         <button class="btn btn-sm btn-i" onclick="imprimirRoteiroLista('${selCid}','landscape')">🖨 Lista ↔</button>
@@ -3506,7 +3498,6 @@ function renderRoteiro(){
         ${rotTab==='map'?`<button class="btn btn-sm btn-p" onclick="imprimirRoteMapa('${selCid}')">🖨 Imprimir mapa</button>`:''}
         `:''}
       </div>
-
       ${!selCid?`<div class="card" style="margin:20px;padding:40px;text-align:center;color:var(--text2);">
         <div style="font-size:32px;margin-bottom:12px;">📅</div>
         <div style="font-size:15px;font-weight:500;">Selecione um cliente para ver o roteiro</div>
@@ -3522,12 +3513,46 @@ function renderRoteiro(){
 
       <!-- MAPA -->
       ${selCid&&rotTab==='map'?`
-      <div style="flex:1;display:flex;min-height:0;">
-        <div id="rot-mapa" style="flex:1;min-height:0;"></div>
-        <div style="width:260px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
-          <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;">Distâncias</div>
+      <!-- Painel ponto de partida -->
+      <div style="padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;flex-shrink:0;">
+        <div style="display:flex;flex-direction:column;gap:6px;min-width:300px;">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;">📍 Ponto de partida</div>
+          <div style="display:flex;gap:6px;">
+            <input id="rotOrigNome" placeholder="Nome (ex: JSR, Casa...)" class="inp" style="width:120px;font-size:11px;padding:5px 8px;">
+            <input id="rotOrigEnd" placeholder="Endereço completo..." class="inp" style="flex:1;font-size:11px;padding:5px 8px;"
+              onkeydown="if(event.key==='Enter')rotAdicionarOrigem()">
+            <button class="btn btn-sm btn-p" onclick="rotAdicionarOrigem()" id="rotOrigBtn">🔍 Buscar</button>
+          </div>
+          <div id="rotOrigStatus" style="font-size:11px;color:var(--text3);min-height:14px;"></div>
+        </div>
+        <div style="width:1px;background:var(--border);align-self:stretch;flex-shrink:0;"></div>
+        <div style="display:flex;flex-direction:column;gap:5px;flex:1;min-width:180px;">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;">Pontos salvos</div>
+          <div id="rotOrigemList" style="display:flex;gap:5px;flex-wrap:wrap;min-height:24px;align-items:center;">
+            <span style="font-size:11px;color:var(--text3);">Nenhum ponto ainda</span>
+          </div>
+        </div>
+        <div style="width:1px;background:var(--border);align-self:stretch;flex-shrink:0;"></div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          <div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;">Ações</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="rotMostrarTodas()">Todas as lojas</button>
+            <button class="btn btn-sm" onclick="rotLimparLinhas()">Limpar linhas</button>
+            <button class="btn btn-sm btn-p" onclick="rotMontarRoteiro('${selCid}')">🗺 Montar roteiro</button>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1;display:flex;min-height:0;overflow:hidden;">
+        <div id="rot-mapa" style="flex:1;height:100%;min-height:300px;"></div>
+        <div id="rot-dist-panel" style="width:280px;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;" id="rot-dist-titulo">Distâncias</div>
           <div style="flex:1;overflow-y:auto;" id="rot-dist-body">
-            <div style="padding:14px;font-size:11px;color:var(--text3);text-align:center;">Clique em uma loja para ver distâncias</div>
+            <div style="padding:16px 12px;font-size:11px;color:var(--text3);text-align:center;line-height:1.8;">
+              <div style="font-size:24px;margin-bottom:8px;">📍</div>
+              1. Digite o endereço de partida<br>
+              2. Clique em 🔍 Buscar<br>
+              3. Clique em <strong>🗺 Montar roteiro</strong>
+            </div>
           </div>
         </div>
       </div>`:''}
@@ -3539,8 +3564,7 @@ function renderRotMes(cid,ano,mes,agenda,bloqSet,obs){
   const prim=new Date(ano,mes,1).getDay();
   const dias=new Date(ano,mes+1,0).getDate();
   const lojas=getRotLojas(cid);
-  const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
-  let h=`<div style="margin-bottom:24px;">
+  const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});  let h=`<div style="margin-bottom:24px;">
     <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;letter-spacing:.08em;text-transform:uppercase;padding-bottom:6px;border-bottom:2px solid var(--border);">${ROT_MESES[mes]} ${ano}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">`;
   ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'].forEach(d=>h+=`<div style="font-size:10px;font-weight:600;color:var(--text3);text-align:center;padding:4px 0;letter-spacing:.04em;text-transform:uppercase;">${d}</div>`);
@@ -3553,9 +3577,11 @@ function renderRotMes(cid,ano,mes,agenda,bloqSet,obs){
     const isBlq=bloqSet.has(key);
     const ev=agenda[key];
     const loja=ev?lojaMap[ev.lojaId]:null;
+    const isFeita=loja?.status==='feito';
     let dcls='rot-dia';
     if(isDom)dcls+=' vazio';
     else if(isBlq)dcls+=' bloqueado';
+    else if(isFeita)dcls+=' feita';
     else if(ev)dcls+=' has-chip';
 
     const droppable=!isDom&&!isBlq;
@@ -3568,12 +3594,20 @@ function renderRotMes(cid,ano,mes,agenda,bloqSet,obs){
     </div>`;
 
     if(!isDom&&loja){
-      h+=`<div class="rot-chip ${loja.cls||'lr'}" draggable="true"
-        ondragstart="rotDragStart(event,'${loja.id}','${key}')" ondragend="rotDragEnd(event)"
-        style="margin-bottom:3px;">
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${ev.cont?'(cont.) ':''}${loja.nome}</span>
-        <span style="font-size:9px;opacity:.6;">${loja.pdvs>0?loja.pdvs+'p':''}</span>
+      const bg=ev.cont?'#F5F3FF':isFeita?'#dcfce7':'';
+      const cor=ev.cont?'#6D28D9':isFeita?'#166534':'';
+      const bd=ev.cont?'1.5px solid #C4B5FD':isFeita?'1.5px solid #86efac':'none';
+      const cls=ev.cont||isFeita?'':loja.cls||'lr';
+      h+=`<div class="rot-chip ${cls}" draggable="${isFeita?'false':'true'}"
+        ${isFeita?'':`ondragstart="rotDragStart(event,'${loja.id}','${key}')" ondragend="rotDragEnd(event)"`}
+        style="margin-bottom:3px;${bg?'background:'+bg+';':''}${cor?'color:'+cor+';':''}${bd&&bd!=='none'?'border:'+bd+';':''}${ev.cont?'font-style:italic;':''}">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;">${isFeita?'✅ ':ev.cont?'↩ ':''}${loja.nome}</span>
+        <span style="font-size:9px;opacity:.6;">${isFeita?'feita':ev.cont?'retorno':loja.pdvs>0?loja.pdvs+'p':''}</span>
       </div>`;
+      if(!ev.cont&&!isFeita)h+=`<button onclick="rotMarcarFeita('${cid}','${loja.id}')"
+        style="font-size:9px;padding:2px 5px;border:1px dashed #86efac;border-radius:3px;background:#f0fdf4;color:#166534;cursor:pointer;width:100%;margin-bottom:2px;text-align:left;">✓ Feita</button>`;
+      if(!ev.cont&&!isFeita)h+=`<button onclick="rotAdicionarContinuacao('${cid}','${loja.id}','${key}')"
+        style="font-size:9px;padding:2px 5px;border:1px dashed #C4B5FD;border-radius:3px;background:#F5F3FF;color:#6D28D9;cursor:pointer;width:100%;margin-bottom:2px;text-align:left;">↩ Retornar</button>`;
       if(obs[key])h+=`<div style="font-size:9px;background:#F0F9FF;color:#0369A1;border-radius:3px;padding:2px 5px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="rotAbrirObs('${cid}','${key}','${d}/${mes+1}')">📝 ${obs[key].slice(0,20)}${obs[key].length>20?'…':''}</div>`;
     }
 
@@ -3621,20 +3655,400 @@ window.rotDropDia=async function(e,cid,key,el){
 
 // ── Ações roteiro ────────────────────────
 window.rotMarcarFeita=async function(cid,id){
-  if(!confirm('Marcar esta loja como IMPLANTAÇÃO CONCLUÍDA?\n\nEla ficará na seção "Concluídas".'))return;
+  if(!confirm('Marcar esta loja como IMPLANTAÇÃO CONCLUÍDA?\n\nEla sairá do calendário e ficará na seção "Concluídas".'))return;
   await fbUpdate(`/roteiros/${cid}/lojas/${id}`,{status:'feito',concluidoEm:new Date().toISOString()});
 };
 window.rotDesmarcarFeita=async function(cid,id){
   await fbUpdate(`/roteiros/${cid}/lojas/${id}`,{status:'pendente',concluidoEm:null});
 };
 window.rotToggleBloq=async function(cid,key){
-  const isBlq=getRot(cid).bloqueados?.[key];
   if(isBlq) await fbRemove(`/roteiros/${cid}/bloqueados/${key}`);
   else await fbSet(`/roteiros/${cid}/bloqueados/${key}`,true);
 };
 window.rotRmDia=async function(cid,key){
   await fbRemove(`/roteiros/${cid}/agenda/${key}`);
 };
+window.rotMudarAba=function(aba){
+  S.rotTab=aba; render();
+  if(aba==='map'){
+    setTimeout(()=>{
+      const el=document.getElementById('rot-mapa');
+      if(!el)return;
+      if(rotMapInst){rotMapInst.invalidateSize();return;}
+      initRoteiroMap();
+    },150);
+  }
+};
+
+window.imprimirRoteMapa=function(cid){
+  const c=gc(cid); if(!c)return;
+  if(!rotMapInst){alert('Abra o mapa primeiro.');return;}
+
+  const origem=rotOrigens.length?rotOrigens[0]:null;
+  const lojas=getRotLojas(cid);
+  const agenda=getRotAgenda(cid);
+  const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const COR_R={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+  const BG_R={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+
+  const lojasComCoord=lojas.filter(l=>l.lat&&l.lng);
+  const items=lojas.map(l=>({
+    numero:l.numero||(l.nome.match(/\\b(\\d{1,3})\\b/)?.[1])||'',
+    nome:l.nome, cls:l.cls, pdvs:l.pdvs,
+    km:origem&&l.lat&&l.lng?rotDistKm(origem.lat,origem.lng,l.lat,l.lng):null,
+    agendada:agendadasIds.has(l.id), feita:l.status==='feito', lat:l.lat, lng:l.lng
+  })).sort((a,b)=>origem?(a.km??999)-(b.km??999):a.nome.localeCompare(b.nome));
+
+  const mediaKm=origem&&items.filter(i=>i.km!=null).length
+    ?items.filter(i=>i.km!=null).reduce((s,d)=>s+(d.km||0),0)/items.filter(i=>i.km!=null).length
+    :null;
+
+  let mapUrl='';
+  if(lojasComCoord.length){
+    const center=rotMapInst.getCenter();
+    const zoom=Math.min(rotMapInst.getZoom(),14);
+    const markersList=[
+      ...(origem?[`${origem.lat},${origem.lng},red-pushpin`]:[]),
+      ...lojasComCoord.slice(0,25).map(l=>`${l.lat},${l.lng},lightblue1`)
+    ];
+    const markersParam=markersList.map(m=>`markers=${encodeURIComponent(m)}`).join('&');
+    mapUrl=`https://staticmap.openstreetmap.de/staticmap.php?center=${center.lat},${center.lng}&zoom=${zoom}&size=640x420&${markersParam}`;
+  }
+
+  const rows=items.map((d,i)=>{
+    const cor=!d.km?'#64748b':d.km<5?'#059669':d.km<15?'#D97706':'#B91C1C';
+    const bgRow=i%2===0?'#fff':'#f9fafb';
+    const badge=d.feita?'✅ Feita':d.agendada?'📅 Agend.':'⏳ Pend.';
+    const badgeCor=d.feita?'#166534':d.agendada?'#4338CA':'#64748b';
+    const badgeBg=d.feita?'#f0fdf4':d.agendada?'#EEF2FF':'#f8fafc';
+    const barW=d.km!=null?Math.min(100,Math.round((d.km/40)*100)):0;
+    return `<tr style="background:${bgRow};">
+      <td style="padding:5px 8px;font-size:11px;font-weight:700;color:#64748b;text-align:center;border-bottom:1px solid #e2e8f0;white-space:nowrap;">${d.numero||'—'}</td>
+      <td style="padding:5px 8px;font-size:11px;font-weight:500;border-bottom:1px solid #e2e8f0;">${d.nome}</td>
+      <td style="padding:5px 8px;font-size:10px;text-align:center;border-bottom:1px solid #e2e8f0;">
+        <span style="background:${BG_R[d.cls]||'#f1f5f9'};color:${COR_R[d.cls]||'#64748b'};padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600;">${d.cls?.toUpperCase()||'—'}</span>
+      </td>
+      ${origem?`<td style="padding:5px 8px;border-bottom:1px solid #e2e8f0;text-align:right;">
+        <span style="font-family:monospace;font-size:12px;font-weight:700;color:${cor};">${d.km!=null?d.km.toFixed(1):'—'}</span>
+        <span style="font-size:9px;color:#94a3b8;"> km</span>
+        ${d.km!=null?`<div style="width:50px;height:4px;background:#e2e8f0;border-radius:2px;overflow:hidden;margin:2px 0 0 auto;"><div style="width:${barW}%;height:100%;background:${cor};border-radius:2px;"></div></div>`:''}
+      </td>`:''}
+      <td style="padding:5px 8px;font-size:10px;text-align:center;border-bottom:1px solid #e2e8f0;">
+        <span style="background:${badgeBg};color:${badgeCor};padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600;">${badge}</span>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Mapa — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:20px;background:#fff;}
+  @media print{body{padding:0;}@page{margin:10mm 8mm;size:A4 landscape;}.no-print{display:none!important;}}
+  table{width:100%;border-collapse:collapse;}
+  th{background:#1e293b;color:#fff;padding:6px 8px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;}
+  .layout{display:flex;gap:16px;align-items:flex-start;margin-top:12px;}
+  .col-mapa{flex:1.5;min-width:0;}
+  .col-tabela{flex:1;min-width:0;overflow:hidden;}</style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
+    <button onclick="window.print()" style="padding:8px 18px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">🖨 Imprimir / PDF</button>
+    <button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;cursor:pointer;">✕</button>
+  </div>
+  <div style="padding-bottom:10px;border-bottom:3px solid #1e293b;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;">
+    <div>
+      <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:4px;">JSR Sistemas · TrainControl</div>
+      <h1 style="font-size:18px;font-weight:700;">${c.name} — Mapa de Roteiro</h1>
+      ${origem?`<div style="font-size:11px;color:#64748b;margin-top:3px;">📍 Base: <strong>${origem.nome}</strong></div>`:'<div style="font-size:11px;color:#94a3b8;">Sem ponto de partida</div>'}
+      <div style="font-size:10px;color:#94a3b8;margin-top:2px;">Gerado em ${today}</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <div style="text-align:center;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:7px 12px;min-width:56px;"><div style="font-size:18px;font-weight:700;color:#166534;">${items.filter(i=>i.feita).length}</div><div style="font-size:9px;color:#166534;">✅ Feitas</div></div>
+      <div style="text-align:center;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:6px;padding:7px 12px;min-width:56px;"><div style="font-size:18px;font-weight:700;color:#4338CA;">${items.filter(i=>i.agendada&&!i.feita).length}</div><div style="font-size:9px;color:#4338CA;">📅 Agend.</div></div>
+      <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:7px 12px;min-width:56px;"><div style="font-size:18px;font-weight:700;color:#64748b;">${items.filter(i=>!i.agendada&&!i.feita).length}</div><div style="font-size:9px;color:#64748b;">⏳ Pend.</div></div>
+      ${mediaKm!=null?`<div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:7px 12px;min-width:56px;"><div style="font-size:18px;font-weight:700;">${mediaKm.toFixed(1)}</div><div style="font-size:9px;color:#64748b;">km médio</div></div>`:''}
+    </div>
+  </div>
+  <div class="layout">
+    <div class="col-mapa">
+      ${mapUrl
+        ?`<img src="${mapUrl}" style="width:100%;max-height:420px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;" alt="Mapa" onerror="this.style.display='none';var fb=document.getElementById('map-fallback');if(fb)fb.style.display='flex';">
+           <div id="map-fallback" style="display:none;background:#f8fafc;border:2px dashed #e2e8f0;border-radius:8px;padding:40px;text-align:center;color:#94a3b8;flex-direction:column;align-items:center;gap:8px;"><div style="font-size:32px;">🗺</div><div>Mapa indisponível</div></div>`
+        :`<div style="background:#f8fafc;border:2px dashed #e2e8f0;border-radius:8px;padding:60px 40px;text-align:center;color:#94a3b8;">
+            <div style="font-size:40px;margin-bottom:8px;">🗺</div>
+            <div style="font-size:13px;">Nenhuma loja com coordenadas cadastradas</div>
+          </div>`}
+    </div>
+    <div class="col-tabela">
+      <div style="font-size:11px;font-weight:600;color:#1e293b;margin-bottom:6px;">${origem?'Distâncias a partir de: '+origem.nome:'Lista de lojas'} (${items.length})</div>
+      <table>
+        <thead><tr>
+          <th style="width:32px;text-align:center;">Nº</th>
+          <th>Loja</th>
+          <th style="width:45px;text-align:center;">Reg.</th>
+          ${origem?'<th style="width:75px;text-align:right;">Distância</th>':''}
+          <th style="width:60px;text-align:center;">Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      ${origem?`<div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;">
+        <span style="background:#dcfce7;color:#166534;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600;">🟢 &lt;5km</span>
+        <span style="background:#FFFBEB;color:#B45309;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600;">🟠 5–15km</span>
+        <span style="background:#FEF2F2;color:#B91C1C;padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600;">🔴 &gt;15km</span>
+      </div>`:''}
+    </div>
+  </div>
+  <script>window.print();<\/script></body></html>`;
+
+  const w=window.open('','_blank');
+  if(w){w.document.write(html);w.document.close();}
+};
+window.imprimirRoteiroLista=function(cid,orient){
+  orient=orient||'portrait';
+  const c=gc(cid); if(!c)return;
+  const agenda=getRotAgenda(cid);
+  const lojas=getRotLojas(cid);
+  const obs=getRotObs(cid);
+  const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
+  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const MESES_FULL=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+  const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const feitas=lojas.filter(l=>l.status==='feito');
+  const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
+  const agendadas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
+  const pendentes=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id));
+  // Inclui dias agendados E dias só com obs
+  const todasChaves=new Set([...Object.keys(agenda),...Object.keys(obs)]);
+  const itens=[...todasChaves].sort().map(k=>{
+    const v=agenda[k]; const l=v?lojaMap[v.lojaId]:null;
+    const d=new Date(k+'T12:00:00');
+    return {k,d,l,cont:v?.cont||false,ob:obs[k]||''};
+  });
+  const porMes={};
+  itens.forEach(it=>{
+    const mes=`${it.d.getFullYear()}-${String(it.d.getMonth()+1).padStart(2,'0')}`;
+    if(!porMes[mes])porMes[mes]={label:`${MESES_FULL[it.d.getMonth()]} ${it.d.getFullYear()}`,itens:[]};
+    porMes[mes].itens.push(it);
+  });
+  const rows=Object.values(porMes).map(({label,itens})=>`
+    <tr><td colspan="6" style="background:#1e293b;color:#fff;padding:7px 12px;font-size:11px;font-weight:700;">${label}</td></tr>
+    ${itens.map(({k,d,l,cont,ob})=>{
+      const ds=d.getDay();
+      const isFeita=l?.status==='feito';
+      const cor=cont?'#6D28D9':isFeita?'#166534':l?(COR[l.cls]||'#1e293b'):'#B45309';
+      const bg=cont?'#F5F3FF':isFeita?'#f0fdf4':l?'#fff':'#FFFBEB';
+      const bgChip=cont?'#EDE9FE':isFeita?'#dcfce7':l?(BG[l.cls]||'#f1f5f9'):'#FFFBEB';
+      const statusBadge=isFeita?'✅ Feita':cont?'↩ Retorno':l?l.cls.toUpperCase():'';
+      return `<tr style="background:${bg};">
+        <td style="padding:6px 10px;font-size:11px;color:#64748b;white-space:nowrap;border-bottom:1px solid #e2e8f0;">${k.split('-').reverse().join('/')}</td>
+        <td style="padding:6px 10px;font-size:11px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;">${dias[ds]}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;">${l?`<span style="background:${bgChip};color:${cor};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${cont?'↩ ':''}${isFeita?'✅ ':''}${l.nome}</span>`:'<span style="color:#B45309;font-size:11px;font-style:italic;">— só observação —</span>'}</td>
+        <td style="padding:6px 10px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:center;">${l?.pdvs||'—'}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;">${statusBadge?`<span style="background:${bgChip};color:${cor};padding:2px 7px;border-radius:12px;font-size:10px;font-weight:600;">${statusBadge}</span>`:''}</td>
+        <td style="padding:6px 10px;font-size:10px;color:#92400e;border-bottom:1px solid #e2e8f0;font-style:italic;">${ob?'📝 '+ob:''}</td>
+      </tr>`;
+    }).join('')}`).join('');
+  // Resumo por status
+  const sumario=`<div style="display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 16px;text-align:center;min-width:90px;"><div style="font-size:22px;font-weight:700;color:#166534;">${feitas.length}</div><div style="font-size:10px;color:#166534;">✅ Feitas</div></div>
+    <div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;padding:10px 16px;text-align:center;min-width:90px;"><div style="font-size:22px;font-weight:700;color:#4338CA;">${agendadas.length}</div><div style="font-size:10px;color:#4338CA;">📅 Agendadas</div></div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;text-align:center;min-width:90px;"><div style="font-size:22px;font-weight:700;color:#64748b;">${pendentes.length}</div><div style="font-size:10px;color:#64748b;">⏳ Pendentes</div></div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;text-align:center;min-width:90px;"><div style="font-size:22px;font-weight:700;color:#1e293b;">${lojas.length}</div><div style="font-size:10px;color:#64748b;">🏪 Total</div></div>
+  </div>`;
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Roteiro — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:28px;background:#fff;}
+  @media print{body{padding:0;}@page{margin:12mm 10mm;size:A4 ${orient};}.no-print{display:none!important;}}
+  table{width:100%;border-collapse:collapse;}th{background:#1e293b;color:#fff;padding:7px 10px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}</style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
+    <button onclick="window.print()" style="padding:9px 18px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🖨 ${orient==='landscape'?'Paisagem':'Retrato'} — Imprimir</button>
+    <button onclick="window.close()" style="padding:9px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
+  </div>
+  <div style="margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1e293b;">
+    <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:5px;">JSR Sistemas · TrainControl</div>
+    <h1 style="font-size:20px;font-weight:700;margin-bottom:3px;">${c.name} — Roteiro de Lojas</h1>
+    <div style="font-size:11px;color:#94a3b8;">Gerado em ${today}</div>
+  </div>
+  ${sumario}
+  <table><thead><tr><th style="width:90px;">Data</th><th style="width:45px;">Dia</th><th>Loja</th><th style="width:45px;text-align:center;">PDVs</th><th style="width:80px;">Status</th><th>Observação</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
+};
+
+window.imprimirRoteiroCal=function(cid,mesBase,anoBase,orient){
+  orient=orient||'portrait';
+  const c=gc(cid);if(!c)return;
+  const agenda=getRotAgenda(cid);
+  const lojas=getRotLojas(cid);
+  const obs=getRotObs(cid);
+  const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
+  const DIAS_CAB=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const MESES_FULL=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+  const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const todasChaves=new Set([...Object.keys(agenda),...Object.keys(obs)]);
+  const mesesSet=new Set();
+  todasChaves.forEach(k=>{const d=new Date(k+'T12:00:00');mesesSet.add(`${d.getFullYear()}-${d.getMonth()}`);});
+  if(!mesesSet.size)mesesSet.add(`${anoBase}-${mesBase}`);
+  const mesesArr=[...mesesSet].sort().map(m=>{const[ano,mes]=m.split('-').map(Number);return{ano,mes};});
+  const feitas=lojas.filter(l=>l.status==='feito');
+  const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
+  const agendadas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
+  const pendentes=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id));
+  const sumario=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:7px 12px;text-align:center;"><b style="color:#166534;">${feitas.length}</b> <span style="font-size:10px;color:#166534;">✅ Feitas</span></div>
+    <div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:6px;padding:7px 12px;text-align:center;"><b style="color:#4338CA;">${agendadas.length}</b> <span style="font-size:10px;color:#4338CA;">📅 Agendadas</span></div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:7px 12px;text-align:center;"><b style="color:#64748b;">${pendentes.length}</b> <span style="font-size:10px;color:#64748b;">⏳ Pendentes</span></div>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+      ${[['#4338CA','#EEF2FF','LR'],['#047857','#ECFDF5','SN'],['#B45309','#FFFBEB','Laranja'],['#B91C1C','#FEF2F2','Vermelho'],['#6D28D9','#F5F3FF','↩ Retorno'],['#166534','#f0fdf4','✅ Feita']].map(([cor,bg,l])=>`<span style="background:${bg};color:${cor};padding:2px 7px;border-radius:10px;font-size:9px;font-weight:600;">${l}</span>`).join('')}
+    </div>
+  </div>`;
+  const calendarios=mesesArr.map(({ano,mes})=>{
+    const prim=new Date(ano,mes,1).getDay();
+    const nDias=new Date(ano,mes+1,0).getDate();
+    let rows='<tr>';let col=0;
+    for(let i=0;i<prim;i++){rows+=`<td style="background:#f8fafc;border:1px solid #e2e8f0;"></td>`;col++;}
+    for(let d=1;d<=nDias;d++){
+      if(col===7){rows+='</tr><tr>';col=0;}
+      const k=`${ano}-${String(mes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const ds=new Date(ano,mes,d).getDay();
+      const isDom=ds===0||ds===6;
+      const ev=agenda[k];const o=obs[k];const l=ev?lojaMap[ev.lojaId]:null;
+      const isFeita=l?.status==='feito';
+      const cor=ev?(ev.cont?'#6D28D9':isFeita?'#166534':(COR[l?.cls]||'#1e293b')):'inherit';
+      const bg=ev?(ev.cont?'#F5F3FF':isFeita?'#f0fdf4':(BG[l?.cls]||'#fff')):(o?'#FEFCE8':'#fff');
+      rows+=`<td style="vertical-align:top;border:1px solid #e2e8f0;padding:3px 4px;background:${isDom?'#f8fafc':bg};width:14.28%;height:68px;">
+        <div style="font-size:9px;font-weight:700;color:${isDom?'#94a3b8':'#475569'};margin-bottom:2px;">${d}</div>
+        ${l?`<div style="font-size:9px;font-weight:600;color:${cor};line-height:1.3;">${ev.cont?'↩ ':isFeita?'✅ ':''}${l.nome}</div>
+        <div style="font-size:8px;color:${cor};opacity:.8;">${isFeita?'Feita':ev.cont?'Retorno':l.cls.toUpperCase()}${l.pdvs?' · '+l.pdvs+'p':''}</div>`:''}
+        ${o?`<div style="font-size:8px;color:#92400e;margin-top:2px;font-style:italic;">📝 ${o.slice(0,28)}${o.length>28?'…':''}</div>`:''}
+      </td>`;
+      col++;
+    }
+    const rem=(7-col)%7;for(let i=0;i<rem;i++)rows+=`<td style="background:#f8fafc;border:1px solid #e2e8f0;"></td>`;
+    rows+='</tr>';
+    return `<div style="margin-bottom:18px;page-break-inside:avoid;">
+      <div style="font-size:11px;font-weight:700;color:#1e293b;margin-bottom:5px;padding-bottom:4px;border-bottom:2px solid #1e293b;letter-spacing:.06em;text-transform:uppercase;">${MESES_FULL[mes]} ${ano}</div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>${DIAS_CAB.map(d=>`<th style="background:#1e293b;color:#fff;padding:4px 3px;font-size:9px;text-align:center;">${d}</th>`).join('')}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  });
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Calendário — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:24px;background:#fff;}
+  @media print{body{padding:0;}@page{margin:${orient==='landscape'?'8mm 10mm':'10mm 8mm'};size:A4 ${orient};}.no-print{display:none!important;}}</style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:999;">
+    <button onclick="window.print()" style="padding:8px 16px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;">🖨 ${orient==='landscape'?'Paisagem':'Retrato'} — Imprimir</button>
+    <button onclick="window.close()" style="padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
+  </div>
+  <div style="margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #1e293b;display:flex;justify-content:space-between;align-items:flex-start;">
+    <div>
+      <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:4px;">JSR Sistemas · TrainControl</div>
+      <h1 style="font-size:18px;font-weight:700;">${c.name} — Calendário de Roteiro</h1>
+      <div style="font-size:10px;color:#94a3b8;margin-top:2px;">Gerado em ${today}</div>
+    </div>
+  </div>
+  ${sumario}
+  ${calendarios.join('')}
+  <script>setTimeout(()=>window.print(),600);<\/script></body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
+};
+window.imprimirRoteiroStatus=function(cid){
+  const c=gc(cid); if(!c)return;
+  const lojas=getRotLojas(cid);
+  const agenda=getRotAgenda(cid);
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};
+  const BG={lr:'#EEF2FF',sn:'#ECFDF5',warn:'#FFFBEB',crit:'#FEF2F2'};
+  const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
+
+  // Data de cada loja no roteiro
+  const lojaData={};
+  Object.entries(agenda).forEach(([k,v])=>{if(!v.cont)lojaData[v.lojaId]=k;});
+
+  const feitas=lojas.filter(l=>l.status==='feito');
+  const agendadas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
+  const pendentes=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id));
+
+  function buildSection(title,items,statusCor,statusBg,statusLabel){
+    if(!items.length)return'';
+    const rows=items.map((l,i)=>{
+      const data=lojaData[l.id];
+      const dataFmt=data?`${dias[new Date(data+'T12:00').getDay()]} ${data.split('-').reverse().join('/')}` :'—';
+      const bg=i%2===0?'#fff':'#f9f9f9';
+      return `<tr style="background:${bg};">
+        <td style="padding:8px 12px;font-size:12px;font-weight:500;border-bottom:1px solid #e2e8f0;">${l.nome}</td>
+        <td style="padding:8px 12px;font-size:10px;color:#64748b;border-bottom:1px solid #e2e8f0;">${l.endereco||'—'}</td>
+        <td style="padding:8px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:center;">${l.pdvs||'—'}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">
+          <span style="background:${BG[l.cls]||'#f1f5f9'};color:${COR[l.cls]||'#64748b'};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${l.cls?.toUpperCase()||'—'}</span>
+        </td>
+        <td style="padding:8px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;">${dataFmt}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">
+          <span style="background:${statusBg};color:${statusCor};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${statusLabel}</span>
+        </td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:24px;page-break-inside:avoid;">
+      <div style="background:${statusBg};border-left:4px solid ${statusCor};padding:8px 14px;margin-bottom:10px;border-radius:0 6px 6px 0;display:flex;align-items:center;justify-content:space-between;">
+        <div style="font-size:13px;font-weight:700;color:${statusCor};">${title}</div>
+        <div style="font-size:11px;color:${statusCor};opacity:.8;">${items.length} loja(s)</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>
+          <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;width:140px;">Loja</th>
+          <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;">Endereço</th>
+          <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:45px;">PDVs</th>
+          <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:70px;">Regime</th>
+          <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;width:120px;">Data</th>
+          <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:75px;">Status</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }
+
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Status — ${c.name}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:28px;background:#fff;}
+  @media print{body{padding:0;}@page{margin:12mm 10mm;size:A4 landscape;}.no-print{display:none!important;}}</style></head><body>
+  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;">
+    <button onclick="window.print()" style="padding:9px 18px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🖨 Imprimir / PDF</button>
+    <button onclick="window.close()" style="padding:9px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
+  </div>
+  <div style="margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1e293b;display:flex;justify-content:space-between;align-items:flex-end;">
+    <div>
+      <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:5px;">JSR Sistemas · TrainControl</div>
+      <h1 style="font-size:20px;font-weight:700;margin-bottom:3px;">${c.name} — Situação por Status</h1>
+      <div style="font-size:11px;color:#94a3b8;">Gerado em ${today}</div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <div style="text-align:center;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 16px;">
+        <div style="font-size:24px;font-weight:700;color:#166534;">${feitas.length}</div>
+        <div style="font-size:10px;color:#166534;">✅ Feitas</div>
+      </div>
+      <div style="text-align:center;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;padding:10px 16px;">
+        <div style="font-size:24px;font-weight:700;color:#4338CA;">${agendadas.length}</div>
+        <div style="font-size:10px;color:#4338CA;">📅 Agendadas</div>
+      </div>
+      <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;">
+        <div style="font-size:24px;font-weight:700;color:#64748b;">${pendentes.length}</div>
+        <div style="font-size:10px;color:#64748b;">⏳ Pendentes</div>
+      </div>
+      <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;">
+        <div style="font-size:24px;font-weight:700;color:#1e293b;">${lojas.length}</div>
+        <div style="font-size:10px;color:#64748b;">🏪 Total</div>
+      </div>
+    </div>
+  </div>
+  ${buildSection('✅ Implantação Concluída',feitas,'#166534','#f0fdf4','✅ Feita')}
+  ${buildSection('📅 Agendadas no Roteiro',agendadas,'#4338CA','#EEF2FF','📅 Agendada')}
+  ${buildSection('⏳ Pendentes — A Programar',pendentes,'#64748b','#f8fafc','⏳ Pendente')}
+  <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
+  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
+};
+
 window.rotAbrirObs=function(cid,key,label){
   const obs=getRot(cid).obs?.[key]||'';
   const mbEl=document.getElementById('mb');
@@ -3673,48 +4087,84 @@ window.rotMesProximo=function(){
 };
 
 // ── CRUD Lojas do roteiro ────────────────
-window.openAddLojaModal=function(cid){
+window.openAddLojaModal=function(cid,editId=''){
+  const existing=editId?getRotLojas(cid).find(l=>l.id===editId):null;
   const mbEl=document.getElementById('mb');
-  mbEl.style.maxWidth='460px';
+  mbEl.style.maxWidth='500px';
   mbEl.innerHTML=`
     <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-      <h3 style="font-size:15px;font-weight:500;">🏪 Adicionar loja ao roteiro</h3>
+      <h3 style="font-size:15px;font-weight:500;">🏪 ${editId?'Editar':'Adicionar'} loja ao roteiro</h3>
       <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button>
     </div>
     <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
-      <div><label class="lbl">Nome da loja</label><input class="inp" id="rotLojaNome" placeholder="Ex: L01 Centro"></div>
       <div style="display:flex;gap:10px;">
-        <div style="flex:1;"><label class="lbl">PDVs</label><input type="number" class="inp" id="rotLojaPdvs" value="3" min="0" max="50"></div>
-        <div style="flex:2;"><label class="lbl">Regime</label>
-          <select class="inp" id="rotLojaCls">
-            <option value="lr">LR — prioridade</option>
-            <option value="sn">SN</option>
-            <option value="warn">Laranja — atenção cert.</option>
-            <option value="crit">Vermelho — cert. crítico</option>
-          </select>
+        <div style="width:90px;"><label class="lbl">Nº da loja</label>
+          <input class="inp" id="rotLojaNro" placeholder="01" value="${esc(existing?.numero||'')}" style="text-align:center;font-weight:700;font-size:15px;">
+        </div>
+        <div style="flex:1;"><label class="lbl">Nome da loja *</label>
+          <input class="inp" id="rotLojaNome" placeholder="Ex: L01 Centro" value="${esc(existing?.nome||'')}">
         </div>
       </div>
       <div style="display:flex;gap:10px;">
-        <div style="flex:1;"><label class="lbl">Lat (opcional)</label><input class="inp" id="rotLojaLat" placeholder="-23.5937"></div>
-        <div style="flex:1;"><label class="lbl">Lng (opcional)</label><input class="inp" id="rotLojaLng" placeholder="-46.4885"></div>
+        <div style="flex:1;"><label class="lbl">PDVs</label><input type="number" class="inp" id="rotLojaPdvs" value="${existing?.pdvs??3}" min="0" max="50"></div>
+        <div style="flex:2;"><label class="lbl">Regime</label>
+          <select class="inp" id="rotLojaCls">
+            <option value="lr"${(existing?.cls||'lr')==='lr'?' selected':''}>LR — prioridade</option>
+            <option value="sn"${existing?.cls==='sn'?' selected':''}>SN</option>
+            <option value="warn"${existing?.cls==='warn'?' selected':''}>Laranja — atenção cert.</option>
+            <option value="crit"${existing?.cls==='crit'?' selected':''}>Vermelho — cert. crítico</option>
+          </select>
+        </div>
       </div>
+      <div>
+        <label class="lbl">Endereço (para o mapa)</label>
+        <div style="display:flex;gap:6px;">
+          <input class="inp" id="rotLojaEnd" placeholder="Ex: Av. Paulista, 1000, São Paulo" value="${esc(existing?.endereco||'')}" style="flex:1;"
+            onkeydown="if(event.key==='Enter')rotGeocodeLoja()">
+          <button class="btn btn-i btn-sm" onclick="rotGeocodeLoja()" id="rotGeoBtn" style="flex-shrink:0;white-space:nowrap;">🔍 Buscar</button>
+        </div>
+        <div id="rotGeoStatus" style="font-size:11px;margin-top:4px;min-height:14px;color:var(--text3);">
+          ${existing?.lat?`✅ Posição salva: ${existing.lat.toFixed(4)}, ${existing.lng.toFixed(4)}`:'Digite o endereço e clique em Buscar'}
+        </div>
+      </div>
+      <input type="hidden" id="rotLojaLat" value="${existing?.lat||''}">
+      <input type="hidden" id="rotLojaLng" value="${existing?.lng||''}">
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button class="btn" onclick="closeModal()">Cancelar</button>
-        <button class="btn btn-p" onclick="rotSalvarLoja('${cid}')">Adicionar</button>
+        <button class="btn btn-p" onclick="rotSalvarLoja('${cid}','${editId}')">${editId?'Salvar':'Adicionar'}</button>
       </div>
     </div>`;
   document.getElementById('ov').classList.add('open');
 };
-window.rotSalvarLoja=async function(cid){
+window.rotSalvarLoja=async function(cid,editId=''){
   const nome=document.getElementById('rotLojaNome')?.value.trim();
+  const numero=document.getElementById('rotLojaNro')?.value.trim()||'';
   const pdvs=parseInt(document.getElementById('rotLojaPdvs')?.value)||0;
   const cls=document.getElementById('rotLojaCls')?.value||'lr';
+  const endereco=document.getElementById('rotLojaEnd')?.value.trim()||'';
   const lat=parseFloat(document.getElementById('rotLojaLat')?.value)||null;
   const lng=parseFloat(document.getElementById('rotLojaLng')?.value)||null;
   if(!nome)return alert('Informe o nome da loja.');
-  const id=gi();
-  await fbSet(`/roteiros/${cid}/lojas/${id}`,{id,nome,pdvs,cls,lat,lng});
+  const id=editId||gi();
+  await fbSet(`/roteiros/${cid}/lojas/${id}`,{id,nome,numero,pdvs,cls,endereco,lat,lng});
   closeModal();
+};
+window.rotGeocodeLoja=async function(){
+  const addr=document.getElementById('rotLojaEnd')?.value.trim(); if(!addr)return;
+  const btn=document.getElementById('rotGeoBtn'); const status=document.getElementById('rotGeoStatus');
+  if(btn){btn.textContent='Buscando...';btn.disabled=true;}
+  if(status){status.style.color='var(--amber)';status.textContent='Buscando endereço...';}
+  try{
+    const url=`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr+', Brasil')}&limit=1&countrycodes=br`;
+    const resp=await fetch(url,{headers:{'Accept-Language':'pt-BR','User-Agent':'TrainControl-JSR/1.0'}});
+    const data=await resp.json();
+    if(!data.length){if(status){status.style.color='var(--red)';status.textContent='❌ Endereço não encontrado.';}return;}
+    const{lat,lon,display_name}=data[0];
+    document.getElementById('rotLojaLat').value=lat;
+    document.getElementById('rotLojaLng').value=lon;
+    if(status){status.style.color='var(--green-t)';status.textContent=`✅ ${display_name.slice(0,60)}...`;}
+  }catch(e){if(status){status.style.color='var(--red)';status.textContent='❌ Erro de conexão.';}}
+  finally{if(btn){btn.textContent='🔍 Buscar';btn.disabled=false;}}
 };
 window.rmRotLoja=async function(cid,id){
   if(!confirm('Remover esta loja do roteiro? Os agendamentos dela também serão removidos.'))return;
@@ -3741,9 +4191,11 @@ function initRoteiroMap(){
   lojas.filter(l=>l.lat&&l.lng).forEach(l=>{
     const isAg=agendadas.has(l.id);
     const cor=isAg?(ROT_COR[l.cls]||'#4338CA'):'#94A3B8';
+    const label=l.numero||(l.nome.match(/\b(\d{1,3})\b/)?.[1])||l.nome.slice(0,2).toUpperCase();
+    const fs=String(label).length<=2?'10px':'8px';
     const icon=L.divIcon({className:'',
-      html:`<div style="background:${cor};color:#fff;border:2px solid #fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer">${l.pdvs||'?'}</div>`,
-      iconSize:[28,28],iconAnchor:[14,14]});
+      html:`<div style="background:${cor};color:#fff;border:2px solid #fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:${fs};font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:pointer;font-family:Arial,sans-serif;" title="${l.nome}">${label}</div>`,
+      iconSize:[30,30],iconAnchor:[15,15]});
     const m=L.marker([l.lat,l.lng],{icon}).addTo(rotMapInst);
     let dataAg='Sem data';
     Object.entries(agenda).forEach(([k,v])=>{if(v.lojaId===l.id&&!v.cont)dataAg=k.split('-').reverse().join('/');});
@@ -3753,6 +4205,135 @@ function initRoteiroMap(){
     rotMarcadores[l.id]=m;
   });
 }
+// ── Variáveis do mapa de roteiro ──────────
+const ROT_CORES_ORIG=['#F59E0B','#8B5CF6','#EC4899','#06B6D4','#10B981','#EF4444'];
+let rotOrigens=[];
+
+window.rotAdicionarOrigem=async function(){
+  const nome=document.getElementById('rotOrigNome')?.value.trim()||'Ponto '+(rotOrigens.length+1);
+  const addr=document.getElementById('rotOrigEnd')?.value.trim();
+  if(!addr)return;
+  const btn=document.getElementById('rotOrigBtn');
+  const status=document.getElementById('rotOrigStatus');
+  if(btn){btn.textContent='Buscando...';btn.disabled=true;}
+  if(status){status.style.color='var(--amber)';status.textContent='Buscando endereço...';}
+  try{
+    const url=`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr+', Brasil')}&limit=1&countrycodes=br`;
+    const resp=await fetch(url,{headers:{'Accept-Language':'pt-BR','User-Agent':'TrainControl-JSR/1.0'}});
+    const data=await resp.json();
+    if(!data.length){if(status){status.style.color='var(--red)';status.textContent='❌ Endereço não encontrado. Tente ser mais específico.';}return;}
+    const{lat,lon,display_name}=data[0];
+    const cor=ROT_CORES_ORIG[rotOrigens.length%ROT_CORES_ORIG.length];
+    const id='orig_'+Date.now();
+    const p={id,nome,lat:parseFloat(lat),lng:parseFloat(lon),cor,endereco:display_name};
+    rotOrigens.push(p);
+    if(rotMapInst){
+      const icon=L.divIcon({className:'',
+        html:`<div style="background:${cor};color:#fff;border:2.5px solid #fff;border-radius:6px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;" title="${nome}">★</div>`,
+        iconSize:[32,32],iconAnchor:[16,16]});
+      const m=L.marker([p.lat,p.lng],{icon,zIndexOffset:1000}).addTo(rotMapInst);
+      m.bindPopup(`<div style="font-family:sans-serif;min-width:160px;"><b>★ ${nome}</b><br>
+        <button onclick="rotVerDistOrigem('${id}')" style="margin-top:8px;width:100%;font-size:11px;padding:5px;border:1px solid #ddd;border-radius:5px;background:#f5f5f5;cursor:pointer;">📍 Ver distâncias daqui</button>
+        <button onclick="rotRemoverOrigem('${id}')" style="margin-top:4px;width:100%;font-size:11px;padding:5px;border:1px solid #fca5a5;border-radius:5px;background:#fef2f2;color:#b91c1c;cursor:pointer;">× Remover</button></div>`);
+      m.on('click',()=>rotVerDistOrigem(id));
+      p.marker=m;
+      rotMapInst.setView([p.lat,p.lng],12);
+    }
+    rotRenderOrigemList();
+    if(status){status.style.color='var(--green-t)';status.textContent=`✅ "${nome}" adicionado!`;}
+    const ne=document.getElementById('rotOrigEnd'); if(ne)ne.value='';
+    const nn=document.getElementById('rotOrigNome'); if(nn)nn.value='';
+    setTimeout(()=>{const el=document.getElementById('rotOrigStatus');if(el&&el.textContent.startsWith('✅'))el.textContent='';},3000);
+    rotVerDistOrigem(id);
+  }catch(e){if(status){status.style.color='var(--red)';status.textContent='❌ Erro de conexão. Verifique sua internet.';}}
+  finally{if(btn){btn.textContent='🔍 Buscar';btn.disabled=false;}}
+};
+
+function rotRenderOrigemList(){
+  const el=document.getElementById('rotOrigemList');if(!el)return;
+  if(!rotOrigens.length){el.innerHTML='<span style="font-size:11px;color:var(--text3);">Nenhum ponto ainda</span>';return;}
+  el.innerHTML=rotOrigens.map(p=>`<div style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:500;padding:4px 9px;border-radius:20px;border:1.5px solid ${p.cor};color:${p.cor};background:${p.cor}18;cursor:pointer;" onclick="rotVerDistOrigem('${p.id}')">★ ${p.nome}<span style="opacity:.5;font-size:13px;margin-left:2px;cursor:pointer;" onclick="event.stopPropagation();rotRemoverOrigem('${p.id}')">×</span></div>`).join('');
+}
+
+window.rotRemoverOrigem=function(id){
+  const idx=rotOrigens.findIndex(p=>p.id===id);if(idx<0)return;
+  if(rotOrigens[idx].marker)rotOrigens[idx].marker.remove();
+  rotOrigens.splice(idx,1);rotLinhas.forEach(l=>l.remove());rotLinhas=[];rotRenderOrigemList();
+};
+
+window.rotVerDistOrigem=function(id){
+  rotLinhas.forEach(l=>l.remove());rotLinhas=[];
+  const p=rotOrigens.find(x=>x.id===id);if(!p||!rotMapInst)return;
+  const cid=S.rotCid;if(!cid)return;
+  const lojas=getRotLojas(cid).filter(l=>l.lat&&l.lng);
+  const agenda=getRotAgenda(cid);
+  const agendadas=new Set(Object.values(agenda).map(v=>v.lojaId));
+  const dists=lojas.map(l=>({nome:l.nome,km:rotDistKm(p.lat,p.lng,l.lat,l.lng),lat:l.lat,lng:l.lng,id:l.id,agendada:agendadas.has(l.id)})).sort((a,b)=>a.km-b.km);
+  const maxKm=dists.length?dists[dists.length-1].km:1;
+  dists.forEach(({km,lat,lng,agendada})=>{
+    const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';
+    rotLinhas.push(L.polyline([[p.lat,p.lng],[lat,lng]],{color:cor,weight:agendada?2.5:1.5,opacity:agendada?.8:.4,dashArray:agendada?null:'4 4'}).addTo(rotMapInst));
+  });
+  const titulo=document.getElementById('rot-dist-titulo');const body=document.getElementById('rot-dist-body');
+  if(titulo)titulo.textContent=`★ ${p.nome}`;
+  if(body)body.innerHTML=`<div style="padding:6px 10px;background:var(--surface2);font-size:10px;color:var(--text3);border-bottom:1px solid var(--border);">🟢 &lt;5km · 🟠 5–15km · 🔴 &gt;15km</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr>
+      <th style="background:var(--surface2);padding:5px 10px;text-align:left;font-size:10px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);position:sticky;top:0;">Loja</th>
+      <th style="background:var(--surface2);padding:5px 8px;text-align:right;font-size:10px;border-bottom:1px solid var(--border);position:sticky;top:0;">Dist.</th>
+    </tr></thead><tbody>
+    ${dists.map(({nome,km,agendada})=>{const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';const pct=Math.round((km/maxKm)*100);
+      return `<tr style="background:${agendada?'':'#f8fafc'};opacity:${agendada?1:.7};">
+        <td style="padding:5px 10px;border-bottom:0.5px solid var(--border);">${agendada?'📌 ':''}${nome}</td>
+        <td style="padding:5px 8px;border-bottom:0.5px solid var(--border);text-align:right;">
+          <span style="font-family:monospace;font-weight:600;color:${cor};">${km.toFixed(1)}<span style="font-size:9px;color:var(--text3);"> km</span></span>
+          <div style="width:40px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:2px;margin-left:auto;"><div style="width:${pct}%;height:4px;background:${cor};border-radius:2px;"></div></div>
+        </td></tr>`;}).join('')}
+    </tbody></table>`;
+  rotMapInst.setView([p.lat,p.lng],12);
+};
+
+window.rotLimparLinhas=function(){rotLinhas.forEach(l=>l.remove());rotLinhas=[];};
+window.rotMostrarTodas=function(){rotLinhas.forEach(l=>l.remove());rotLinhas=[];if(rotMapInst){initRoteiroMap();rotMapInst.setView([-23.57,-46.55],11);}};
+
+window.rotMontarRoteiro=function(cid){
+  if(!rotMapInst)return alert('Aguarde o mapa carregar e tente novamente.');
+  if(!rotOrigens.length)return alert('Adicione um ponto de partida primeiro.\n\nDigite o endereço e clique em 🔍 Buscar.');
+  const origem=rotOrigens[0];
+  const lojas=getRotLojas(cid).filter(l=>l.lat&&l.lng);
+  if(!lojas.length)return alert('Nenhuma loja com endereço cadastrado.\n\nEdite as lojas e adicione o endereço.');
+  rotLinhas.forEach(l=>l.remove());rotLinhas=[];
+  Object.values(rotMarcadores).forEach(m=>m.remove());rotMarcadores={};
+  const agenda=getRotAgenda(cid);
+  const mes=S.rotMes??new Date().getMonth();const ano=S.rotAno??new Date().getFullYear();
+  const mesStr=`${ano}-${String(mes+1).padStart(2,'0')}`;
+  const lojasNoMes=Object.entries(agenda).filter(([k,v])=>k.startsWith(mesStr)&&!v.cont).sort((a,b)=>a[0].localeCompare(b[0])).map(([k,v])=>{const l=lojas.find(x=>x.id===v.lojaId);return l?{...l,data:k,dataFmt:k.split('-').reverse().join('/')}:null;}).filter(Boolean);
+  const paradas=lojasNoMes.length>0?lojasNoMes:[...lojas].sort((a,b)=>rotDistKm(origem.lat,origem.lng,a.lat,a.lng)-rotDistKm(origem.lat,origem.lng,b.lat,b.lng));
+  if(!paradas.length)return alert('Nenhuma loja com coordenadas para montar o roteiro.');
+  const COR_ROT={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C'};const DIAS=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  let pontos=[{lat:origem.lat,lng:origem.lng}];paradas.forEach(l=>pontos.push({lat:l.lat,lng:l.lng}));
+  let totalKm=0;const segmentos=[];
+  for(let i=0;i<pontos.length-1;i++){const de=pontos[i],ate=pontos[i+1];const km=rotDistKm(de.lat,de.lng,ate.lat,ate.lng);totalKm+=km;segmentos.push({km,idx:i});
+    const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';const l=L.polyline([[de.lat,de.lng],[ate.lat,ate.lng]],{color:cor,weight:3,opacity:.85}).addTo(rotMapInst);l.bindTooltip(`Trecho ${i+1}: ${km.toFixed(1)} km`,{sticky:true});rotLinhas.push(l);}
+  paradas.forEach((l,i)=>{
+    const lbl=l.numero||(l.nome.match(/\b(\d{1,3})\b/)?.[1])||String(i+1);const lfs=String(lbl).length<=2?'11px':'9px';
+    const icon=L.divIcon({className:'',html:`<div style="background:${COR_ROT[l.cls]||'#4338CA'};color:#fff;border:2px solid #fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:${lfs};font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.3);font-family:Arial,sans-serif;">${lbl}</div>`,iconSize:[30,30],iconAnchor:[15,15]});
+    const m=L.marker([l.lat,l.lng],{icon,zIndexOffset:500}).addTo(rotMapInst);m.bindPopup(`<div style="font-family:sans-serif;min-width:140px;"><div style="font-size:13px;font-weight:700;">${i+1}. ${l.nome}</div><div style="font-size:11px;color:#666;">${l.data?DIAS[new Date(l.data+'T12:00').getDay()]+' '+l.dataFmt:''}</div></div>`);rotLinhas.push(m);});
+  rotMapInst.fitBounds([[origem.lat,origem.lng],...paradas.map(l=>[l.lat,l.lng])],{padding:[32,32]});
+  const titulo=document.getElementById('rot-dist-titulo');const body=document.getElementById('rot-dist-body');
+  if(titulo)titulo.innerHTML=`🗺 Roteiro`;
+  if(body)body.innerHTML=`<div style="padding:8px 12px;background:var(--blue-bg);border-bottom:1px solid var(--border);font-size:11px;color:var(--blue-t);display:flex;justify-content:space-between;"><span>${paradas.length} parada(s)</span><span style="font-weight:600;">Total: ${totalKm.toFixed(1)} km</span></div>
+    <div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--amber-bg);">
+      <div style="width:28px;height:28px;border-radius:6px;background:${origem.cor||'#F59E0B'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">★</div>
+      <div><div style="font-size:12px;font-weight:600;">${origem.nome}</div><div style="font-size:10px;color:var(--text3);">Ponto de partida</div></div></div>
+    ${paradas.map((l,i)=>{const km=segmentos[i]?.km||0;const cor=km<5?'#059669':km<15?'#D97706':'#B91C1C';const dotCor=COR_ROT[l.cls]||'#4338CA';
+      return `<div style="padding:3px 12px 3px 22px;font-size:10px;color:var(--text3);display:flex;align-items:center;gap:6px;">↓<span style="font-family:monospace;font-weight:600;color:${cor};">${km.toFixed(1)} km</span></div>
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 12px;border-bottom:1px solid var(--border);">
+          <div style="width:28px;height:28px;border-radius:50%;background:${dotCor};color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;">${l.numero||(l.nome.match(/\b(\d{1,3})\b/)?.[1])||String(i+1)}</div>
+          <div style="flex:1;"><div style="font-size:12px;font-weight:600;">${l.nome}</div>
+          <div style="font-size:10px;color:var(--text3);">${l.data?DIAS[new Date(l.data+'T12:00').getDay()]+', '+l.dataFmt+' · ':''} ${l.pdvs?l.pdvs+' PDVs':''}</div></div></div>`;}).join('')}
+    <div style="padding:10px 12px;font-size:11px;color:var(--text2);text-align:center;">🟢 &lt;5km · 🟠 5–15km · 🔴 &gt;15km</div>`;
+};
+
 window.rotVerDistancias=function(fromId){
   rotLinhas.forEach(l=>l.remove());rotLinhas=[];
   const cid=S.rotCid; if(!cid)return;
@@ -3777,105 +4358,6 @@ function rotDistKm(la1,ln1,la2,ln2){
   const a=Math.sin(dL/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dG/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-window.imprimirRoteiroStatus=function(cid){
-  const c=gc(cid); if(!c)return;
-  const lojas=getRotLojas(cid);
-  const agenda=getRotAgenda(cid);
-  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
-  const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  const COR={lr:'#4338CA',sn:'#0E7490',warn:'#B45309',crit:'#B91C1C'};
-  const BG={lr:'#EEF2FF',sn:'#ECFEFF',warn:'#FFFBEB',crit:'#FEF2F2'};
-  const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
-  const lojaData={};
-  Object.entries(agenda).forEach(([k,v])=>{if(!v.cont)lojaData[v.lojaId]=k;});
-  const feitas=lojas.filter(l=>l.status==='feito');
-  const agendadas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
-  const pendentes=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id)).sort((a,b)=>a.nome.localeCompare(b.nome));
-
-  function buildSection(title,items,statusCor,statusBg,statusLabel){
-    if(!items.length)return'';
-    const ordenados=[...items].sort((a,b)=>{
-      const da=lojaData[a.id]||'9999-99-99', db=lojaData[b.id]||'9999-99-99';
-      return da.localeCompare(db);
-    });
-    const rows=ordenados.map((l,i)=>{
-      const data=lojaData[l.id];
-      const dataFmt=data?`${dias[new Date(data+'T12:00').getDay()]} ${data.split('-').reverse().join('/')}`:'—';
-      const bg=i%2===0?'#fff':'#f9f9f9';
-      return `<tr style="background:${bg};">
-        <td style="padding:8px 12px;font-size:12px;font-weight:500;border-bottom:1px solid #e2e8f0;">${l.nome}</td>
-        <td style="padding:8px 12px;font-size:10px;color:#64748b;border-bottom:1px solid #e2e8f0;">${l.endereco||'—'}</td>
-        <td style="padding:8px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;text-align:center;">${l.pdvs||'—'}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">
-          <span style="background:${BG[l.cls]||'#f1f5f9'};color:${COR[l.cls]||'#64748b'};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${l.cls?.toUpperCase()||'—'}</span>
-        </td>
-        <td style="padding:8px 12px;font-size:11px;color:#64748b;border-bottom:1px solid #e2e8f0;">Data de implantação PDV<br><strong>${dataFmt}</strong></td>
-        <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">
-          <span style="background:${statusBg};color:${statusCor};padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;">${statusLabel}</span>
-        </td>
-      </tr>`;
-    }).join('');
-    return `<div style="margin-bottom:24px;page-break-inside:avoid;">
-      <div style="background:${statusBg};border-left:4px solid ${statusCor};padding:8px 14px;margin-bottom:10px;border-radius:0 6px 6px 0;display:flex;align-items:center;justify-content:space-between;">
-        <div style="font-size:13px;font-weight:700;color:${statusCor};">${title}</div>
-        <div style="font-size:11px;color:${statusCor};opacity:.8;">${items.length} loja(s)</div>
-      </div>
-      <table style="width:100%;border-collapse:collapse;">
-        <thead><tr>
-          <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;width:130px;">Loja</th>
-          <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;">Endereço</th>
-          <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:45px;">PDVs</th>
-          <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:65px;">Regime</th>
-          <th style="background:#1e293b;color:#fff;padding:7px 12px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;width:135px;">Data de implantação PDV</th>
-          <th style="background:#1e293b;color:#fff;padding:7px 8px;text-align:center;font-size:10px;font-weight:600;text-transform:uppercase;width:75px;">Status</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-  }
-
-  const assinatura=feitas.length?`<div style="margin-top:40px;padding-top:24px;border-top:1px solid #e2e8f0;page-break-inside:avoid;">
-    <div style="display:flex;gap:40px;justify-content:space-between;">
-      <div style="flex:1;text-align:center;"><div style="border-top:1.5px solid #1e293b;padding-top:8px;margin:0 20px;">
-        <div style="font-size:11px;font-weight:600;">Assinatura do cliente</div>
-        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">${c.name}</div>
-      </div></div>
-      <div style="flex:1;text-align:center;"><div style="border-top:1.5px solid #1e293b;padding-top:8px;margin:0 20px;">
-        <div style="font-size:11px;font-weight:600;">Data</div>
-        <div style="font-size:10px;color:#94a3b8;margin-top:2px;">___ / ___ / ______</div>
-      </div></div>
-    </div>
-    <div style="font-size:10px;color:#94a3b8;text-align:center;margin-top:18px;">Confirmo que as ${feitas.length} loja(s) acima tiveram a implantação concluída.</div>
-  </div>`:'';
-
-  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Status — ${c.name}</title>
-  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:28px;}
-  @media print{body{padding:0;}@page{margin:12mm 10mm;size:A4 landscape;}.no-print{display:none!important;}}</style></head><body>
-  <div class="no-print" style="position:fixed;top:12px;right:12px;display:flex;gap:8px;">
-    <button onclick="window.print()" style="padding:9px 18px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🖨 Imprimir / PDF</button>
-    <button onclick="window.close()" style="padding:9px 14px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;cursor:pointer;">✕</button>
-  </div>
-  <div style="margin-bottom:20px;padding-bottom:14px;border-bottom:3px solid #1e293b;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;">
-    <div>
-      <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:5px;">JSR Sistemas · TrainControl</div>
-      <h1 style="font-size:20px;font-weight:700;margin-bottom:3px;">${c.name} — Situação por Status</h1>
-      <div style="font-size:11px;color:#94a3b8;">Gerado em ${today}</div>
-    </div>
-    <div style="display:flex;gap:10px;">
-      <div style="text-align:center;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:10px 16px;"><div style="font-size:24px;font-weight:700;color:#166534;">${feitas.length}</div><div style="font-size:10px;color:#166534;">✅ Feitas</div></div>
-      <div style="text-align:center;background:#EEF2FF;border:1px solid #C7D2FE;border-radius:8px;padding:10px 16px;"><div style="font-size:24px;font-weight:700;color:#4338CA;">${agendadas.length}</div><div style="font-size:10px;color:#4338CA;">📅 Agendadas</div></div>
-      <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;"><div style="font-size:24px;font-weight:700;color:#64748b;">${pendentes.length}</div><div style="font-size:10px;color:#64748b;">⏳ Pendentes</div></div>
-      <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 16px;"><div style="font-size:24px;font-weight:700;">${lojas.length}</div><div style="font-size:10px;color:#64748b;">🏪 Total</div></div>
-    </div>
-  </div>
-  ${buildSection('✅ Implantação Concluída',feitas,'#166534','#f0fdf4','✅ Feita')}
-  ${assinatura}
-  ${buildSection('📅 Agendadas no Roteiro',agendadas,'#4338CA','#EEF2FF','📅 Agendada')}
-  ${buildSection('⏳ Pendentes — A Programar',pendentes,'#64748b','#f8fafc','⏳ Pendente')}
-  <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
-  const w=window.open('','_blank');if(w){w.document.write(html);w.document.close();}
-};
-
 window.exportRotCSV=function(cid){
   const agenda=getRotAgenda(cid);const lojas=getRotLojas(cid);const lojaMap={};lojas.forEach(l=>{lojaMap[l.id]=l;});
   const rows=[['Data','DiaSemana','Loja','PDVs','Regime','Continuação']];
@@ -3888,6 +4370,369 @@ window.exportRotCSV=function(cid){
   const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='roteiro.csv';a.click();
 };
+// ══ MÓDULO PROSPECTS ════════════════════════════════════════════
+
+function renderProspects(){
+  const isAdmin=currentProfile?.role==='admin';
+  const selPid=S.prospPid||'';
+  const selQid=S.prospQid||'';
+  const prospTab=S.prospTab||'prospects';
+  const prospects=Object.values(D.prospects||{}).sort((a,b)=>a.nome.localeCompare(b.nome));
+  const questionarios=Object.values(D.questionarios||{}).sort((a,b)=>a.nome.localeCompare(b.nome));
+  const prospect=selPid?D.prospects?.[selPid]:null;
+  const respostasDoProspect=selPid?Object.entries(D.respostas||{}).filter(([,r])=>r.prospectId===selPid).map(([id,r])=>({...r,id})):[];
+
+  return `<div class="ph"><div><h2>◎ Prospects</h2><p>Pesquisas e coleta de informações</p></div></div>
+
+  <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:var(--r);overflow:hidden;width:fit-content;margin-bottom:20px;">
+    <button class="btn" onclick="setS('prospTab','prospects')" style="border:none;border-radius:0;padding:8px 20px;font-size:13px;${prospTab==='prospects'?'background:var(--text);color:#fff;':''}">👥 Prospects</button>
+    <button class="btn" onclick="setS('prospTab','questionarios')" style="border:none;border-radius:0;border-left:1px solid var(--border);padding:8px 20px;font-size:13px;${prospTab==='questionarios'?'background:var(--text);color:#fff;':''}">📋 Questionários</button>
+  </div>
+
+  ${prospTab==='questionarios'?`
+  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+    <div style="width:260px;flex-shrink:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-size:13px;font-weight:500;">Modelos (${questionarios.length})</div>
+        <button class="btn btn-sm btn-p" onclick="abrirModalNovoQ()">+ Novo</button>
+      </div>
+      ${questionarios.map(q=>`
+        <div onclick="setS('prospQid','${q.id}')" style="padding:10px 14px;border:1.5px solid ${selQid===q.id?'var(--blue)':'var(--border)'};border-radius:var(--r);margin-bottom:6px;cursor:pointer;background:${selQid===q.id?'var(--blue-bg)':'var(--surface)'};">
+          <div style="font-size:13px;font-weight:500;">${q.nome}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px;">${Object.keys(q.perguntas||{}).length} pergunta(s)</div>
+        </div>`).join('')}
+      ${!questionarios.length?`<div style="color:var(--text2);font-size:12px;padding:16px;text-align:center;">Nenhum questionário</div>`:''}
+    </div>
+    <div style="flex:1;min-width:300px;" id="qDetalhe">
+      ${(()=>{
+        if(!selQid)return`<div class="card" style="padding:40px;text-align:center;color:var(--text2);"><div style="font-size:32px;margin-bottom:12px;">📋</div><div>Selecione ou crie um questionário</div></div>`;
+        const q=D.questionarios?.[selQid];if(!q)return'';
+        const perguntas=Object.values(q.perguntas||{}).sort((a,b)=>(a.order??999)-(b.order??999));
+        let html=`<div class="card" style="overflow:hidden;"><div style="padding:14px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <div><div style="font-size:15px;font-weight:500;">${q.nome}</div>${q.descricao?`<div style="font-size:12px;color:var(--text2);margin-top:2px;">${q.descricao}</div>`:''}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-sm btn-i" onclick="abrirModalNovoQ('${selQid}')">✎ Editar</button><button class="btn btn-sm btn-p" onclick="replicarQuestionario('${selQid}')">⎘ Replicar</button><button class="btn btn-sm btn-d" onclick="excluirQuestionario('${selQid}')">× Excluir</button></div>
+        </div><div style="padding:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div style="font-size:13px;font-weight:500;">${perguntas.length} pergunta(s)</div>
+            <button class="btn btn-sm btn-p" onclick="abrirModalPergunta('${selQid}')">+ Pergunta</button>
+          </div>`;
+        perguntas.forEach((p,i)=>{
+          const tipoLabel=p.tipo==='livre'?'📝 Texto livre':p.tipo==='numero'?'🔢 Número':p.tipo==='data'?'📅 Data':p.tipo==='multipla'?`☑ Múltipla${p.multipla_selecao?' (várias)':''} · ${(p.opcoes||[]).length} opções`:`⭐ Escala ${p.escala_min||1}–${p.escala_max||10}`;
+          html+=`<div style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px;background:var(--bg);">
+            <span style="font-size:11px;font-weight:700;color:var(--blue-t);background:var(--blue-bg);padding:2px 8px;border-radius:20px;flex-shrink:0;margin-top:1px;">${i+1}</span>
+            <div style="flex:1;"><div style="font-size:13px;font-weight:500;">${p.texto}${p.obrigatorio?'<span style="color:var(--red);margin-left:4px;">*</span>':''}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px;">${tipoLabel}</div></div>
+            <div style="display:flex;gap:4px;"><button class="btn btn-i btn-sm" onclick="abrirModalPergunta('${selQid}','${p.id}')">✎</button><button class="btn btn-d btn-sm" onclick="excluirPergunta('${selQid}','${p.id}')">×</button></div>
+          </div>`;
+        });
+        html+=`</div></div>`;
+        return html;
+      })()}
+    </div>
+  </div>`:`
+  <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+    <div style="width:240px;flex-shrink:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="font-size:13px;font-weight:500;">Prospects (${prospects.length})</div>
+        <button class="btn btn-sm btn-p" onclick="abrirModalNovoProspect()">+ Novo</button>
+      </div>
+      ${prospects.map(p=>{const nR=Object.values(D.respostas||{}).filter(r=>r.prospectId===p.id).length;const nC=Object.values(D.respostas||{}).filter(r=>r.prospectId===p.id&&r.completed).length;
+        return `<div onclick="setS('prospPid','${p.id}')" style="padding:10px 14px;border:1.5px solid ${selPid===p.id?'var(--blue)':'var(--border)'};border-radius:var(--r);margin-bottom:6px;cursor:pointer;background:${selPid===p.id?'var(--blue-bg)':'var(--surface)'};">
+          <div style="font-size:13px;font-weight:500;">${p.nome}</div>
+          ${p.empresa?`<div style="font-size:11px;color:var(--text2);margin-top:1px;">${p.empresa}</div>`:''}
+          <div style="font-size:10px;margin-top:3px;color:${nC>0?'var(--green-t)':'var(--text3)'};">${nC}/${nR} respondido(s)</div>
+        </div>`;}).join('')}
+      ${!prospects.length?`<div style="color:var(--text2);font-size:12px;padding:16px;text-align:center;">Nenhum prospect</div>`:''}
+    </div>
+    <div style="flex:1;min-width:300px;">
+      ${!selPid?`<div class="card" style="padding:40px;text-align:center;color:var(--text2);"><div style="font-size:32px;margin-bottom:12px;">👆</div><div>Selecione ou crie um prospect</div></div>`:`
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h3 style="font-size:17px;font-weight:500;">${prospect?.nome||''}</h3>
+          ${prospect?.empresa?`<div style="font-size:13px;color:var(--text2);">${prospect.empresa}</div>`:''}
+          ${prospect?.email?`<div style="font-size:12px;color:var(--text2);">✉️ ${prospect.email}</div>`:''}
+          ${prospect?.telefone?`<div style="font-size:12px;color:var(--text2);">📱 ${prospect.telefone}</div>`:''}
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-sm btn-i" onclick="abrirModalNovoProspect('${selPid}')">✎ Editar</button>
+          <button class="btn btn-sm btn-p" onclick="enviarPesquisa('${selPid}')">📨 Enviar pesquisa</button>
+        </div>
+      </div>
+      <div style="font-size:13px;font-weight:500;margin-bottom:10px;">Pesquisas enviadas (${respostasDoProspect.length})</div>
+      ${!respostasDoProspect.length?`<div class="card" style="padding:24px;text-align:center;color:var(--text2);font-size:13px;">Nenhuma pesquisa enviada.<br><button class="btn btn-sm btn-p" style="margin-top:10px;" onclick="enviarPesquisa('${selPid}')">📨 Enviar primeira pesquisa</button></div>`:''}
+      ${respostasDoProspect.sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||'')).map(r=>{
+        const q=D.questionarios?.[r.questionarioId];
+        const ST=r.completed?{ic:'✅',l:'Respondido',c:'var(--green-t)',bg:'var(--green-bg)'}:r.openedAt?{ic:'👁',l:'Visualizado',c:'var(--amber)',bg:'var(--amber-bg)'}:{ic:'📨',l:'Enviado',c:'var(--blue-t)',bg:'var(--blue-bg)'};
+        return `<div class="card" style="padding:14px 16px;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">
+            <div>
+              <div style="font-size:13px;font-weight:500;">${q?.nome||'Questionário removido'}</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:3px;">Enviado: ${r.criadoEm?new Date(r.criadoEm).toLocaleString('pt-BR'):'—'}</div>
+              ${r.openedAt?`<div style="font-size:11px;color:var(--amber);">👁 Aberto: ${new Date(r.openedAt).toLocaleString('pt-BR')}${r.openCount>1?` (${r.openCount}x)`:''}</div>`:''}
+              ${r.completedAt?`<div style="font-size:11px;color:var(--green-t);">✅ Respondido: ${new Date(r.completedAt).toLocaleString('pt-BR')}</div>`:''}
+            </div>
+            <span style="font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;background:${ST.bg};color:${ST.c};">${ST.ic} ${ST.l}</span>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+            <button class="btn btn-sm btn-i" onclick="copiarLinkPesquisa('${r.token}','${esc(prospect?.nome||'')}')">🔗 Link</button>
+            ${r.completed?`<button class="btn btn-sm btn-p" onclick="verRespostas('${r.id}')">📊 Ver</button>
+            <button class="btn btn-sm btn-i" onclick="imprimirRespostas('${r.id}')">🖨 PDF</button>`:''}
+            <button class="btn btn-sm btn-d" onclick="excluirResposta('${r.id}')">×</button>
+          </div>
+        </div>`;}).join('')}
+      `}
+    </div>
+  </div>`}`;
+}
+
+window.abrirModalNovoProspect=function(editId=''){
+  const p=editId?D.prospects?.[editId]:null;
+  const mb=document.getElementById('mb'); mb.style.maxWidth='480px';
+  mb.innerHTML=`<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+    <h3 style="font-size:15px;font-weight:500;">👤 ${editId?'Editar':'Novo'} Prospect</h3>
+    <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button></div>
+  <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+    <div><label class="lbl">Nome *</label><input class="inp" id="pNome" value="${esc(p?.nome||'')}" placeholder="Nome do contato"></div>
+    <div><label class="lbl">Empresa</label><input class="inp" id="pEmpresa" value="${esc(p?.empresa||'')}" placeholder="Nome da empresa"></div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;"><label class="lbl">E-mail</label><input class="inp" id="pEmail" type="email" value="${esc(p?.email||'')}" placeholder="email@empresa.com"></div>
+      <div style="flex:1;"><label class="lbl">Telefone</label><input class="inp" id="pTel" value="${esc(p?.telefone||'')}" placeholder="(11) 99999-9999"></div>
+    </div>
+    <div><label class="lbl">Observações</label><textarea class="inp" id="pObs" rows="2">${esc(p?.obs||'')}</textarea></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-p" onclick="salvarProspect('${editId}')">Salvar</button>
+    </div></div>`;
+  document.getElementById('ov').classList.add('open');
+};
+window.salvarProspect=async function(editId=''){
+  const nome=document.getElementById('pNome')?.value.trim(); if(!nome)return alert('Informe o nome.');
+  const data={nome,empresa:document.getElementById('pEmpresa')?.value.trim()||'',email:document.getElementById('pEmail')?.value.trim()||'',telefone:document.getElementById('pTel')?.value.trim()||'',obs:document.getElementById('pObs')?.value.trim()||''};
+  const id=editId||gi(); if(!editId){data.criadoEm=new Date().toISOString();}
+  await fbSet(`/prospects/${id}`,{id,...data}); if(!editId)S.prospPid=id; closeModal();
+};
+window.abrirModalNovoQ=function(editId=''){
+  const q=editId?D.questionarios?.[editId]:null;
+  const mb=document.getElementById('mb'); mb.style.maxWidth='480px';
+  mb.innerHTML=`<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+    <h3 style="font-size:15px;font-weight:500;">📋 ${editId?'Editar':'Novo'} Questionário</h3>
+    <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button></div>
+  <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+    <div><label class="lbl">Nome *</label><input class="inp" id="qNome" value="${esc(q?.nome||'')}" placeholder="Ex: Pesquisa inicial de implantação"></div>
+    <div><label class="lbl">Descrição / Introdução</label><textarea class="inp" id="qDesc" rows="3" placeholder="Texto no topo do formulário...">${esc(q?.descricao||'')}</textarea></div>
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;border:1px solid var(--border);border-radius:var(--r);">
+      <input type="checkbox" id="qLgpd" ${q?.usarLgpd!==false?'checked':''} style="width:16px;height:16px;accent-color:var(--blue);">
+      <div><div style="font-size:13px;font-weight:500;">🔒 Exibir aviso LGPD</div>
+      <div style="font-size:11px;color:var(--text2);">Cliente precisará concordar antes de responder</div></div>
+    </label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-p" onclick="salvarQuestionario('${editId}')">Salvar</button>
+    </div></div>`;
+  document.getElementById('ov').classList.add('open');
+};
+window.salvarQuestionario=async function(editId=''){
+  const nome=document.getElementById('qNome')?.value.trim(); if(!nome)return alert('Informe o nome.');
+  const id=editId||gi();
+  const data={id,nome,descricao:document.getElementById('qDesc')?.value.trim()||'',usarLgpd:document.getElementById('qLgpd')?.checked!==false};
+  if(!editId){data.criadoEm=new Date().toISOString();data.perguntas={};}
+  await fbUpdate(`/questionarios/${id}`,data); if(!editId)S.prospQid=id; closeModal();
+};
+window.excluirQuestionario=async function(id){if(confirm('Excluir?')){await fbRemove(`/questionarios/${id}`);S.prospQid='';}};
+
+window.replicarQuestionario=function(fromId){
+  const q=D.questionarios?.[fromId]; if(!q)return;
+  const qs=Object.values(D.questionarios||{}).filter(x=>x.id!==fromId);
+  if(!qs.length)return alert('Crie outro questionário para poder replicar as perguntas.');
+  const mb=document.getElementById('mb'); mb.style.maxWidth='420px';
+  mb.innerHTML=`<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+    <h3 style="font-size:15px;font-weight:500;">⎘ Replicar perguntas</h3>
+    <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button></div>
+  <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+    <div style="font-size:13px;color:var(--text2);">Copiar as ${Object.keys(q.perguntas||{}).length} pergunta(s) de <strong>"${q.nome}"</strong> para:</div>
+    <div><label class="lbl">Questionário de destino</label>
+      <select class="inp" id="repDestQid">${qs.map(x=>`<option value="${x.id}">${x.nome}</option>`).join('')}</select>
+    </div>
+    <div style="background:var(--amber-bg);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--amber);">
+      As perguntas existentes no destino serão mantidas. Apenas as novas serão adicionadas.
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-p" onclick="confirmarReplicar('${fromId}')">⎘ Replicar</button>
+    </div></div>`;
+  document.getElementById('ov').classList.add('open');
+};
+window.confirmarReplicar=async function(fromId){
+  const destId=document.getElementById('repDestQid')?.value; if(!destId)return;
+  const src=D.questionarios?.[fromId]?.perguntas||{};
+  const dest=D.questionarios?.[destId]?.perguntas||{};
+  const destTextos=new Set(Object.values(dest).map(p=>p.texto));
+  const toAdd=Object.values(src).filter(p=>!destTextos.has(p.texto));
+  const baseOrder=Object.keys(dest).length;
+  const batch={};
+  toAdd.forEach((p,i)=>{const newId=gi();batch[newId]={...p,id:newId,order:baseOrder+i};});
+  if(!toAdd.length)return alert('Todas as perguntas já existem no destino.');
+  await fbUpdate(`/questionarios/${destId}/perguntas`,batch);
+  alert(`✅ ${toAdd.length} pergunta(s) replicada(s) com sucesso!`);
+  closeModal();
+};
+
+window.abrirModalPergunta=function(qid,pid=''){
+  const p=pid?D.questionarios?.[qid]?.perguntas?.[pid]:null;
+  const mb=document.getElementById('mb'); mb.style.maxWidth='520px';
+  mb.innerHTML=`<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+    <h3 style="font-size:15px;font-weight:500;">❓ ${pid?'Editar':'Nova'} Pergunta</h3>
+    <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button></div>
+  <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+    <div><label class="lbl">Texto da pergunta *</label><textarea class="inp" id="pqTexto" rows="2">${esc(p?.texto||'')}</textarea></div>
+    <div style="display:flex;gap:10px;align-items:flex-end;">
+      <div style="flex:2;"><label class="lbl">Tipo de resposta</label>
+        <select class="inp" id="pqTipo" onchange="pqAtualizarOpcoes()">
+          <option value="livre"${(p?.tipo||'livre')==='livre'?' selected':''}>📝 Texto livre</option>
+          <option value="numero"${p?.tipo==='numero'?' selected':''}>🔢 Número</option>
+          <option value="data"${p?.tipo==='data'?' selected':''}>📅 Data</option>
+          <option value="multipla"${p?.tipo==='multipla'?' selected':''}>☑ Múltipla escolha</option>
+          <option value="escala"${p?.tipo==='escala'?' selected':''}>⭐ Escala numérica</option>
+        </select>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding-bottom:8px;">
+        <input type="checkbox" id="pqObrig" ${p?.obrigatorio?'checked':''}> Obrigatória
+      </label>
+    </div>
+    <div id="pqOpcoes">${p?.tipo==='multipla'?_pqRenderOps(p):p?.tipo==='escala'?_pqRenderEscala(p):''}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-p" onclick="salvarPergunta('${qid}','${pid}')">Salvar</button>
+    </div></div>`;
+  document.getElementById('ov').classList.add('open');
+};
+function _pqRenderOps(p){
+  const ops=(p?.opcoes||['']).map(o=>esc(o));
+  return `<div><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+    <label class="lbl" style="margin:0;">Opções</label>
+    <label style="font-size:11px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="pqMultSel" ${p?.multipla_selecao?'checked':''}> Permitir várias</label>
+  </div>
+  <div id="pqOpsC" style="display:flex;flex-direction:column;gap:5px;">
+    ${ops.map((o,i)=>`<div style="display:flex;gap:5px;"><input class="inp" value="${o}" style="flex:1;" placeholder="Opção ${i+1}">
+    <button onclick="this.parentElement.remove()" style="border:none;background:transparent;color:var(--red);cursor:pointer;font-size:16px;">×</button></div>`).join('')}
+  </div>
+  <button class="btn btn-sm" style="margin-top:6px;width:100%;" onclick="const c=document.getElementById('pqOpsC');const d=document.createElement('div');d.style='display:flex;gap:5px;';d.innerHTML='<input class=\\'inp\\' style=\\'flex:1;\\' placeholder=\\'Nova opção\\'><button onclick=\\'this.parentElement.remove()\\' style=\\'border:none;background:transparent;color:var(--red);cursor:pointer;\\'>×</button>';c.appendChild(d);">+ Opção</button></div>`;
+}
+function _pqRenderEscala(p){
+  return `<div style="display:flex;flex-direction:column;gap:8px;">
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;"><label class="lbl">Mínimo</label><input type="number" class="inp" id="pqEscMin" value="${p?.escala_min||1}" min="0" max="9"></div>
+      <div style="flex:1;"><label class="lbl">Máximo</label><input type="number" class="inp" id="pqEscMax" value="${p?.escala_max||10}" min="2" max="10"></div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;"><label class="lbl">Label mínimo</label><input class="inp" id="pqEscLMin" value="${esc(p?.escala_label_min||'Muito ruim')}"></div>
+      <div style="flex:1;"><label class="lbl">Label máximo</label><input class="inp" id="pqEscLMax" value="${esc(p?.escala_label_max||'Excelente')}"></div>
+    </div></div>`;
+}
+window.pqAtualizarOpcoes=function(){
+  const tipo=document.getElementById('pqTipo')?.value;
+  const el=document.getElementById('pqOpcoes'); if(!el)return;
+  if(tipo==='multipla')el.innerHTML=_pqRenderOps(null);
+  else if(tipo==='escala')el.innerHTML=_pqRenderEscala(null);
+  else el.innerHTML='';
+};
+window.salvarPergunta=async function(qid,pid=''){
+  const texto=document.getElementById('pqTexto')?.value.trim(); if(!texto)return alert('Informe o texto.');
+  const tipo=document.getElementById('pqTipo')?.value||'livre';
+  const obrigatorio=document.getElementById('pqObrig')?.checked||false;
+  const data={id:pid||gi(),texto,tipo,obrigatorio};
+  if(tipo==='multipla'){data.opcoes=[...document.querySelectorAll('#pqOpsC input')].map(i=>i.value.trim()).filter(Boolean);data.multipla_selecao=document.getElementById('pqMultSel')?.checked||false;}
+  if(tipo==='escala'){data.escala_min=parseInt(document.getElementById('pqEscMin')?.value)||1;data.escala_max=parseInt(document.getElementById('pqEscMax')?.value)||10;data.escala_label_min=document.getElementById('pqEscLMin')?.value.trim()||'Muito ruim';data.escala_label_max=document.getElementById('pqEscLMax')?.value.trim()||'Excelente';}
+  const perguntas=D.questionarios?.[qid]?.perguntas||{};
+  data.order=pid?(perguntas[pid]?.order??0):Object.keys(perguntas).length;
+  await fbSet(`/questionarios/${qid}/perguntas/${data.id}`,data); closeModal();
+};
+window.excluirPergunta=async function(qid,pid){if(confirm('Remover pergunta?'))await fbRemove(`/questionarios/${qid}/perguntas/${pid}`);};
+window.enviarPesquisa=function(prospectId){
+  const qs=Object.values(D.questionarios||{}); if(!qs.length)return alert('Crie um questionário primeiro na aba "Questionários".');
+  const mb=document.getElementById('mb'); mb.style.maxWidth='480px';
+  mb.innerHTML=`<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+    <h3 style="font-size:15px;font-weight:500;">📨 Enviar pesquisa</h3>
+    <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button></div>
+  <div style="padding:20px;display:flex;flex-direction:column;gap:12px;">
+    <div><label class="lbl">Questionário</label><select class="inp" id="envQid">${qs.map(q=>`<option value="${q.id}">${q.nome} (${Object.keys(q.perguntas||{}).length} perguntas)</option>`).join('')}</select></div>
+    <div style="background:var(--blue-bg);border-radius:var(--r);padding:10px 14px;font-size:12px;color:var(--blue-t);">Será gerado um link único. Ao abrir e responder, o status aparece aqui.</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-p" onclick="criarLinkPesquisa('${prospectId}')">🔗 Gerar e copiar link</button>
+    </div></div>`;
+  document.getElementById('ov').classList.add('open');
+};
+window.criarLinkPesquisa=async function(prospectId){
+  const qid=document.getElementById('envQid')?.value; if(!qid)return;
+  const token=gi()+gi(); const rid=gi();
+  await fbSet(`/respostas/${rid}`,{id:rid,prospectId,questionarioId:qid,token,criadoEm:new Date().toISOString(),criadoPor:currentProfile?.email||'',completed:false,openedAt:null,completedAt:null,answers:{}});
+  // Índice público: token → {rid, qid, prospectId} para acesso sem auth
+  await fbSet(`/pesquisaIndex/${token}`,{rid,questionarioId:qid,prospectId});
+  const link=`${window.location.origin}${window.location.pathname}?pesquisa=${token}`;
+  const p=D.prospects?.[prospectId]; const q=D.questionarios?.[qid];
+  const nome=p?.nome||'';
+  const msg=`Olá, ${nome}\n\nPara que possamos entender melhor suas necessidades e fornecer uma proposta personalizada, gostaríamos de coletar algumas informações essenciais.\n\nSegue link para preencher nossa solicitação de proposta:\n\n${link}\n\nJSR Sistemas`;
+  if(navigator.clipboard)navigator.clipboard.writeText(msg).then(()=>alert('✅ Mensagem copiada! Cole no WhatsApp.'));
+  else prompt('Copie:',link);
+  closeModal();
+};
+window.copiarLinkPesquisa=function(token,nomeProspect){
+  const link=`${window.location.origin}${window.location.pathname}?pesquisa=${token}`;
+  const msg=`Olá, ${nomeProspect||''}\n\nPara que possamos entender melhor suas necessidades e fornecer uma proposta personalizada, gostaríamos de coletar algumas informações essenciais.\n\nSegue link para preencher nossa solicitação de proposta:\n\n${link}\n\nJSR Sistemas`;
+  if(navigator.clipboard)navigator.clipboard.writeText(msg).then(()=>alert('✅ Copiado!'));
+  else prompt('Link:',link);
+};
+window.verRespostas=function(rid){
+  const r=D.respostas?.[rid]; if(!r)return;
+  const q=D.questionarios?.[r.questionarioId];
+  const prospect=D.prospects?.[r.prospectId];
+  const perguntas=q?Object.values(q.perguntas||{}).sort((a,b)=>(a.order??999)-(b.order??999)):[];
+  const mb=document.getElementById('mb'); mb.style.maxWidth='600px';
+  mb.innerHTML=`<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+    <h3 style="font-size:15px;font-weight:500;">📊 Respostas — ${esc(prospect?.nome||'')}</h3>
+    <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button></div>
+  <div style="padding:20px;max-height:65vh;overflow-y:auto;">
+    <div style="font-size:12px;color:var(--text2);margin-bottom:16px;">${q?.nome||''} · ${r.completedAt?new Date(r.completedAt).toLocaleString('pt-BR'):'—'}</div>
+    ${perguntas.map((p,i)=>{const resp=r.answers?.[p.id];const respFmt=Array.isArray(resp)?resp.join(', '):(resp||'—');
+      return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px;">${i+1}. ${p.texto}</div>
+        <div style="font-size:14px;background:var(--surface2);padding:8px 12px;border-radius:var(--r);">${esc(respFmt)}</div>
+      </div>`;}).join('')}
+  </div>
+  <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;">
+    <button class="btn btn-i" onclick="imprimirRespostas('${rid}')">🖨 PDF</button>
+    <button class="btn" onclick="closeModal()">Fechar</button>
+  </div>`;
+  document.getElementById('ov').classList.add('open');
+};
+window.imprimirRespostas=function(rid){
+  const r=D.respostas?.[rid]; if(!r)return;
+  const q=D.questionarios?.[r.questionarioId]; const prospect=D.prospects?.[r.prospectId];
+  const perguntas=q?Object.values(q.perguntas||{}).sort((a,b)=>(a.order??999)-(b.order??999)):[];
+  const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const rows=perguntas.map((p,i)=>{const resp=r.answers?.[p.id];const respFmt=Array.isArray(resp)?resp.join(', '):(resp||'—');
+    return `<tr><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;width:45%;vertical-align:top;font-weight:500;font-size:12px;color:#475569;">${i+1}. ${p.texto}</td><td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;">${respFmt}</td></tr>`;}).join('');
+  const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Pesquisa — ${prospect?.nome||''}</title>
+  <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:Arial,sans-serif;color:#1e293b;padding:32px;}
+  @media print{body{padding:0;}@page{margin:15mm 12mm;size:A4 portrait;}.no-print{display:none!important;}}
+  table{width:100%;border-collapse:collapse;}</style></head><body>
+  <div class="no-print" style="position:fixed;top:16px;right:16px;display:flex;gap:8px;">
+    <button onclick="window.print()" style="padding:10px 20px;background:#1e293b;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;">🖨 Imprimir / PDF</button>
+    <button onclick="window.close()" style="padding:10px 16px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;cursor:pointer;">✕</button>
+  </div>
+  <div style="margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #1e293b;">
+    <div style="font-size:9px;letter-spacing:2px;color:#64748b;text-transform:uppercase;margin-bottom:6px;">JSR Sistemas · TrainControl</div>
+    <h1 style="font-size:20px;font-weight:700;margin-bottom:4px;">${q?.nome||'Pesquisa'}</h1>
+    <div style="font-size:13px;color:#64748b;">Prospect: <strong>${prospect?.nome||'—'}</strong>${prospect?.empresa?' · '+prospect.empresa:''}</div>
+    <div style="font-size:11px;color:#94a3b8;margin-top:4px;">Respondido: ${r.completedAt?new Date(r.completedAt).toLocaleString('pt-BR'):'—'} · Gerado: ${today}</div>
+  </div>
+  <table><tbody>${rows}</tbody></table>
+  <script>setTimeout(()=>window.print(),500);<\/script></body></html>`;
+  const w=window.open('','_blank'); if(w){w.document.write(html);w.document.close();}
+};
+window.excluirResposta=async function(rid){if(confirm('Remover?'))await fbRemove(`/respostas/${rid}`);};
+
 window.setS=(key,val)=>{S[key]=val;render();};
 
 // ── EVENTS ────────────────────────────────────────────────────────────────
@@ -4315,6 +5160,7 @@ document.addEventListener('change',e=>{
   if(e.target.dataset.action==='relCid'){S.relCid=e.target.value;render();}
   if(e.target.dataset.action==='dashCid'){S.dashCid=e.target.value;render();}
   if(e.target.dataset.action==='dashInst'){S.dashInst=e.target.value;render();}
+  if(e.target.dataset.action==='rotCid'){S.rotCid=e.target.value;render();}
   if(e.target.id==='ttSel'){S.ttDay=e.target.value;render();}
 });
 document.getElementById('ov').addEventListener('click',e=>{if(e.target===document.getElementById('ov'))closeModal();});
