@@ -3361,6 +3361,7 @@ function render(){
 const ROT_MESES=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const ROT_COR={lr:'#4338CA',sn:'#047857',warn:'#B45309',crit:'#B91C1C',nova:'#0369A1'};
 let rotMapInst=null, rotLinhas=[], rotMarcadores={};
+let rotActiveOrigin=null; // origem ativa para o print (definida ao clicar loja ou buscar endereço)
 
 function getRot(cid){ return D.roteiros?.[cid]||{}; }
 function getRotLojas(cid){ return Object.values(getRot(cid).lojas||{}); }
@@ -3683,7 +3684,7 @@ window.rotMudarAba=function(aba){
 window.imprimirRoteMapa=function(cid){
   const c=gc(cid); if(!c)return;
 
-  const origem=rotOrigens.length?rotOrigens[0]:null;
+  const origem=rotOrigens.length?rotOrigens[0]:rotActiveOrigin;
   const lojas=getRotLojas(cid);
   const agenda=getRotAgenda(cid);
   const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
@@ -4260,6 +4261,7 @@ window.rotAdicionarOrigem=async function(){
     const id='orig_'+Date.now();
     const p={id,nome,lat:parseFloat(lat),lng:parseFloat(lon),cor,endereco:display_name};
     rotOrigens.push(p);
+    rotActiveOrigin={lat:p.lat,lng:p.lng,nome:p.nome}; // guarda para o print
     if(rotMapInst){
       const icon=L.divIcon({className:'',
         html:`<div style="background:${cor};color:#fff;border:2.5px solid #fff;border-radius:6px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);cursor:pointer;" title="${nome}">★</div>`,
@@ -4373,6 +4375,8 @@ window.rotVerDistancias=function(fromId){
   const lojas=getRotLojas(cid);
   const origem=lojas.find(l=>l.id===fromId);
   if(!origem||!origem.lat)return;
+  // Guarda origem ativa para o print
+  rotActiveOrigin={lat:origem.lat,lng:origem.lng,nome:origem.nome};
   const dists=lojas.filter(l=>l.id!==fromId&&l.lat&&l.lng).map(l=>({
     nome:l.nome,km:rotDistKm(origem.lat,origem.lng,l.lat,l.lng),lat:l.lat,lng:l.lng
   })).sort((a,b)=>a.km-b.km);
