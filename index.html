@@ -3422,59 +3422,61 @@ function renderRoteiro(){
   const agenda=getRotAgenda(selCid);
   const bloqSet=new Set(getRotBloq(selCid));
   const obs=getRotObs(selCid);
-  const agendadas=new Set(Object.values(agenda).map(v=>v.lojaId));
-  const livres=lojas.filter(l=>!agendadas.has(l.id));
+  const agendadasIds=new Set(Object.values(agenda).map(v=>v.lojaId));
+  const feitas=lojas.filter(l=>l.status==='feito');
+  const agendadasLojas=lojas.filter(l=>l.status!=='feito'&&agendadasIds.has(l.id));
+  const aprogramar=lojas.filter(l=>l.status!=='feito'&&!agendadasIds.has(l.id));
+  const livres=aprogramar;
   const now=new Date();
   const mesBase=S.rotMes??now.getMonth();
   const anoBase=S.rotAno??now.getFullYear();
 
+  function buildSidebar(){
+    if(!selCid) return '<div style="flex:1;overflow-y:auto;padding:10px;"><div style="font-size:12px;color:var(--text2);">Selecione um cliente acima</div></div>';
+    let s=`<div style="padding:8px 10px;border-bottom:1px solid var(--border);display:flex;gap:5px;">
+      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--green-bg);"><div style="font-size:15px;font-weight:700;color:var(--green-t);">${feitas.length}</div><div style="font-size:9px;color:var(--green-t);">✅ Feitas</div></div>
+      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--blue-bg);"><div style="font-size:15px;font-weight:700;color:var(--blue-t);">${agendadasLojas.length}</div><div style="font-size:9px;color:var(--blue-t);">📅 Agendadas</div></div>
+      <div style="flex:1;text-align:center;padding:5px 3px;border-radius:6px;background:var(--surface2);"><div style="font-size:15px;font-weight:700;color:var(--text2);">${aprogramar.length}</div><div style="font-size:9px;color:var(--text2);">⏳ Pendentes</div></div>
+    </div>`;
+    s+='<div style="flex:1;overflow-y:auto;padding:10px;">';
+    if(aprogramar.length){
+      s+=`<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;">⏳ A programar</div>`;
+      aprogramar.forEach(l=>{s+=`<div class="rot-chip ${l.cls||'lr'}" draggable="true" ondragstart="rotDragStart(event,'${l.id}',null)" ondragend="rotDragEnd(event)" style="margin-bottom:4px;"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(l.nome)}</span><span style="font-size:9px;opacity:.6;">${l.pdvs>0?l.pdvs+'p':''}</span></div>`;});
+    }
+    if(agendadasLojas.length){
+      s+=`<div style="font-size:10px;font-weight:700;color:var(--blue-t);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 5px;">📅 Agendadas</div>`;
+      agendadasLojas.forEach(l=>{s+=`<div style="display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--blue-bg);border-radius:var(--r);margin-bottom:3px;font-size:11px;"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--blue-t);">${esc(l.nome)}</span><button title="Marcar como feita" onclick="rotMarcarFeita('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--green-t);cursor:pointer;font-size:16px;padding:0;line-height:1;font-weight:700;">✓</button></div>`;});
+    }
+    if(feitas.length){
+      s+=`<div style="font-size:10px;font-weight:700;color:var(--green-t);text-transform:uppercase;letter-spacing:.06em;margin:8px 0 5px;">✅ Concluídas</div>`;
+      feitas.forEach(l=>{s+=`<div style="display:flex;align-items:center;gap:5px;padding:5px 8px;background:var(--green-bg);border-radius:var(--r);margin-bottom:3px;font-size:11px;border:1px solid #86efac;"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--green-t);text-decoration:line-through;opacity:.8;">${esc(l.nome)}</span><button title="Desfazer" onclick="rotDesmarcarFeita('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:12px;padding:0;">↩</button></div>`;});
+    }
+    s+=`<hr style="border:none;border-top:1px solid var(--border);margin:10px 0;"><button class="btn btn-sm btn-p" style="width:100%;margin-bottom:4px;" onclick="openAddLojaModal('${selCid}')">+ Nova loja</button>`;
+    lojas.forEach(l=>{s+=`<div style="display:flex;align-items:center;gap:5px;padding:4px 8px;background:var(--surface2);border-radius:var(--r);margin-bottom:2px;font-size:11px;"><span style="width:7px;height:7px;border-radius:50%;background:${ROT_COR[l.cls]||'#94A3B8'};flex-shrink:0;"></span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(l.nome)}</span><button onclick="openAddLojaModal('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--blue-t);cursor:pointer;font-size:11px;padding:0 1px;">✎</button><button onclick="rmRotLoja('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--red);cursor:pointer;font-size:13px;padding:0 1px;">×</button></div>`;});
+    s+='</div>';
+    return s;
+  }
+
   return `
-  <!-- CSS do roteiro -->
   <style>
     .rot-chip{font-size:11px;font-weight:500;padding:5px 7px;border-radius:5px;cursor:grab;display:flex;align-items:center;gap:5px;user-select:none;border:1px solid transparent;}
     .rot-chip:active{cursor:grabbing;transform:scale(.97);}
     .rot-chip.lr{background:#EEF2FF;color:#4338CA;border-color:#C7D2FE;}
-    .rot-chip.sn{background:#ECFDF5;color:#047857;border-color:#6EE7B7;}
+    .rot-chip.sn{background:#ECFEFF;color:#0E7490;border-color:#67E8F9;}
     .rot-chip.warn{background:#FFFBEB;color:#B45309;border-color:#FCD34D;}
     .rot-chip.crit{background:#FEF2F2;color:#B91C1C;border-color:#FECACA;}
     .rot-chip.nova{background:#F0F9FF;color:#0369A1;border-color:#7DD3FC;}
     .rot-dia{min-height:72px;background:#fff;border:1.5px solid var(--border);border-radius:8px;padding:5px;position:relative;transition:border-color .12s;}
     .rot-dia.drag-over{border-color:#4338CA!important;background:#F5F3FF!important;border-style:dashed!important;}
     .rot-dia.bloqueado{background:var(--surface2);border-style:dashed;}
-    .rot-dia.feriado{background:#FFFBEB;}
     .rot-dia.vazio{background:transparent;border-color:transparent;}
     .rot-dia.has-chip{border-color:#C9C4BC;}
+    .rot-dia.feita{background:#f0fdf4;border-color:#86efac;}
   </style>
-
   <div style="display:flex;height:calc(100vh - 120px);overflow:hidden;">
-
-    <!-- SIDEBAR POOL -->
-    <div style="width:220px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
-      <div style="padding:12px 14px;border-bottom:1px solid var(--border);">
-        <div style="font-size:13px;font-weight:500;">Lojas sem data</div>
-        <div style="font-size:11px;color:var(--text2);margin-top:2px;">Arraste para um dia</div>
-      </div>
-      <div style="flex:1;overflow-y:auto;padding:10px;">
-        ${!selCid?`<div style="font-size:12px;color:var(--text2);padding:8px 4px;">Selecione um cliente acima</div>`:''}
-        ${selCid&&livres.length===0&&lojas.length>0?`<div style="font-size:11px;color:var(--green-t);background:var(--green-bg);border-radius:var(--r);padding:8px 10px;">✅ Todas as lojas agendadas!</div>`:''}
-        ${livres.map(l=>`
-          <div class="rot-chip ${l.cls}" draggable="true"
-            id="chip-pool-${l.id}"
-            ondragstart="rotDragStart(event,'${l.id}',null)"
-            ondragend="rotDragEnd(event)"
-            style="margin-bottom:5px;">
-            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.nome}</span>
-            <span style="font-size:9px;opacity:.6;">${l.pdvs>0?l.pdvs+'p':''}</span>
-          </div>`).join('')}
-        <hr style="border:none;border-top:1px solid var(--border);margin:10px 0;">
-        ${selCid?`<button class="btn btn-sm btn-p" style="width:100%;margin-bottom:6px;" onclick="openAddLojaModal('${selCid}')">+ Nova loja</button>`:''}
-        ${lojas.map(l=>`
-          <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--surface2);border-radius:var(--r);margin-bottom:3px;font-size:11px;">
-            <span style="width:8px;height:8px;border-radius:50%;background:${ROT_COR[l.cls]||'#94A3B8'};flex-shrink:0;"></span>
-            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${l.nome}</span>
-            <button onclick="rmRotLoja('${selCid}','${l.id}')" style="border:none;background:transparent;color:var(--red);cursor:pointer;font-size:13px;line-height:1;padding:0 2px;">×</button>
-          </div>`).join('')}
-      </div>
+    <!-- SIDEBAR -->
+    <div style="width:230px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
+      ${buildSidebar()}
     </div>
 
     <!-- ÁREA PRINCIPAL -->
@@ -3618,6 +3620,13 @@ window.rotDropDia=async function(e,cid,key,el){
 };
 
 // ── Ações roteiro ────────────────────────
+window.rotMarcarFeita=async function(cid,id){
+  if(!confirm('Marcar esta loja como IMPLANTAÇÃO CONCLUÍDA?\n\nEla ficará na seção "Concluídas".'))return;
+  await fbUpdate(`/roteiros/${cid}/lojas/${id}`,{status:'feito',concluidoEm:new Date().toISOString()});
+};
+window.rotDesmarcarFeita=async function(cid,id){
+  await fbUpdate(`/roteiros/${cid}/lojas/${id}`,{status:'pendente',concluidoEm:null});
+};
 window.rotToggleBloq=async function(cid,key){
   const isBlq=getRot(cid).bloqueados?.[key];
   if(isBlq) await fbRemove(`/roteiros/${cid}/bloqueados/${key}`);
