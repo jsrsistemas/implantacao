@@ -1673,6 +1673,110 @@ function renderRelatorios(){
     }).join('')}`;
   }
 
+  // ── TOTAL DE HORAS POR DIA ──────────────────────────────────────
+  function relHoras(){
+    const dias=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    let totalMinsGeral=0;
+    const rows=ss.sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(s=>{
+      const procs=Object.values(s.processes||{});
+      const starts=procs.map(p=>t2m(p.startTime||'09:00')).filter(v=>!isNaN(v));
+      const ends=procs.map(p=>t2m(p.endTime||'10:00')).filter(v=>!isNaN(v));
+      if(!starts.length)return null;
+      const mins=lunchDeduct(Math.min(...starts),Math.max(...ends),s.lunchStart,s.lunchEnd);
+      totalMinsGeral+=mins;
+      const d=new Date((s.date||'')+'T12:00:00');
+      const dateStr=s.date?`${dias[d.getDay()]} ${s.date.split('-').reverse().join('/')}`:'—';
+      const h=Math.floor(mins/60),m=mins%60;
+      const hStr=`${h}h${m>0?m+'min':''}`;
+      const pct=Math.min(100,Math.round(mins/480*100));
+      const cor=mins<240?'var(--amber)':mins<360?'var(--blue-t)':'var(--green-t)';
+      const hrInicio=starts.length?`${String(Math.floor(Math.min(...starts)/60)).padStart(2,'0')}:${String(Math.min(...starts)%60).padStart(2,'0')}`:'—';
+      const hrFim=ends.length?`${String(Math.floor(Math.max(...ends)/60)).padStart(2,'0')}:${String(Math.max(...ends)%60).padStart(2,'0')}`:'—';
+      return `<tr>
+        <td style="padding:9px 14px;font-size:13px;font-weight:500;border-bottom:1px solid var(--border);">${s.label?`Dia ${s.label}`:dateStr}</td>
+        <td style="padding:9px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border);">${dateStr}</td>
+        <td style="padding:9px 14px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border);">${hrInicio} → ${hrFim}</td>
+        <td style="padding:9px 14px;font-size:13px;font-weight:700;color:${cor};border-bottom:1px solid var(--border);">${hStr}</td>
+        <td style="padding:9px 14px;border-bottom:1px solid var(--border);">
+          <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden;width:120px;">
+            <div style="width:${pct}%;height:100%;background:${cor};border-radius:4px;"></div>
+          </div>
+        </td>
+      </tr>`;
+    }).filter(Boolean).join('');
+    const tH=Math.floor(totalMinsGeral/60),tM=totalMinsGeral%60;
+    return `<div class="card" style="padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+      <div><div style="font-size:11px;color:var(--text2);margin-bottom:2px;">Total de dias</div><div style="font-size:24px;font-weight:700;">${ss.length}</div></div>
+      <div style="width:1px;height:40px;background:var(--border);"></div>
+      <div><div style="font-size:11px;color:var(--text2);margin-bottom:2px;">Total de horas treinadas</div><div style="font-size:24px;font-weight:700;color:var(--green-t);">${tH}h${tM>0?tM+'min':''}</div></div>
+      <div style="width:1px;height:40px;background:var(--border);"></div>
+      <div><div style="font-size:11px;color:var(--text2);margin-bottom:2px;">Média por dia</div><div style="font-size:24px;font-weight:700;color:var(--blue-t);">${ss.length?Math.round(totalMinsGeral/ss.length/60*10)/10+'h':'—'}</div></div>
+    </div>
+    <div class="card" style="overflow:hidden;"><table class="tbl">
+      <thead><tr><th>Sessão</th><th>Data</th><th>Horário</th><th>Duração</th><th style="width:140px;">Visual</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--text2);">Nenhum dado</td></tr>'}</tbody>
+    </table></div>`;
+  }
+
+  // ── COBERTURA DE TREINAMENTOS ──────────────────────────────────
+  function relCobertura(){
+    const cats=Object.values(D.catalog||{}).sort((a,b)=>{
+      const ca=a.category||'Zzz',cb=b.category||'Zzz';
+      return ca.localeCompare(cb)||a.name.localeCompare(b.name);
+    });
+    if(!cats.length)return `<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum item no catálogo ainda.</div>`;
+    const cov=coverageForClient(selCid);
+    const byCateg={};
+    cats.forEach(cat=>{const g=cat.category||'Sem categoria';if(!byCateg[g])byCateg[g]=[];byCateg[g].push(cat);});
+    const nConcluido=cats.filter(cat=>covStatus(cov,cat)==='concluido').length;
+    const nAgendado=cats.filter(cat=>covStatus(cov,cat)==='agendado').length;
+    const nPendente=cats.length-nConcluido-nAgendado;
+    const pct=cats.length>0?Math.round(nConcluido/cats.length*100):0;
+    let html=`<div class="card" style="padding:16px 20px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+        <div><div style="font-size:15px;font-weight:500;">${c?.name||''} — Cobertura</div></div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <div style="text-align:center;padding:8px 12px;background:var(--green-bg);border-radius:var(--r);"><div style="font-size:22px;font-weight:700;color:var(--green-t);">${nConcluido}</div><div style="font-size:10px;color:var(--green-t);">✅ Concluídos</div></div>
+          <div style="text-align:center;padding:8px 12px;background:var(--amber-bg);border-radius:var(--r);"><div style="font-size:22px;font-weight:700;color:var(--amber);">${nAgendado}</div><div style="font-size:10px;color:var(--amber);">🟡 Agendados</div></div>
+          <div style="text-align:center;padding:8px 12px;background:var(--surface2);border-radius:var(--r);"><div style="font-size:22px;font-weight:700;color:var(--text3);">${nPendente}</div><div style="font-size:10px;color:var(--text3);">⬜ Pendentes</div></div>
+          <div style="text-align:center;padding:8px 16px;background:var(--blue-bg);border-radius:var(--r);"><div style="font-size:28px;font-weight:700;color:var(--blue-t);">${pct}%</div><div style="font-size:10px;color:var(--blue-t);">Concluído</div></div>
+        </div>
+      </div>
+      <div style="height:10px;background:var(--border);border-radius:5px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:var(--green-t);border-radius:5px;"></div></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button class="btn btn-sm btn-p" onclick="imprimirCobertura('${selCid}')">🖨 Imprimir</button></div>
+    </div>`;
+    Object.entries(byCateg).forEach(([catNome,items])=>{
+      const nOk=items.filter(cat=>covStatus(cov,cat)==='concluido').length;
+      const nAg=items.filter(cat=>covStatus(cov,cat)==='agendado').length;
+      const pctG=items.length>0?Math.round(nOk/items.length*100):0;
+      html+=`<div class="card" style="margin-bottom:12px;overflow:hidden;">
+        <div style="padding:10px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+          <div style="font-size:13px;font-weight:600;">📂 ${catNome}</div>
+          <div style="display:flex;gap:8px;font-size:11px;">
+            <span style="color:var(--green-t);">✅ ${nOk}</span><span style="color:var(--amber);">🟡 ${nAg}</span>
+            <span style="background:var(--blue-bg);color:var(--blue-t);padding:2px 10px;border-radius:20px;font-weight:600;">${pctG}%</span>
+          </div>
+        </div>
+        <div style="overflow-x:auto;"><table class="tbl">
+          <thead><tr><th>Processo / Treinamento</th><th>Status</th><th>Data de realização</th></tr></thead>
+          <tbody>`;
+      items.forEach(cat=>{
+        const st=covStatus(cov,cat);
+        let dataR='—';
+        ss.forEach(s=>{Object.values(s.processes||{}).forEach(p=>{
+          if((p.catalogId===cat.id||p.name.trim().toLowerCase()===cat.name.trim().toLowerCase())&&(p.status==='realizado'||p.status==='video')){if(dataR==='—')dataR=fdws(s.date);}
+        });});
+        const info=st==='concluido'?{bg:'var(--green-bg)',cor:'var(--green-t)',ic:'✅',lb:'Concluído'}:
+                   st==='agendado' ?{bg:'var(--amber-bg)',cor:'var(--amber)',ic:'🟡',lb:'Agendado'}:
+                                   {bg:'var(--surface2)',cor:'var(--text3)',ic:'⬜',lb:'Pendente'};
+        html+=`<tr><td style="font-size:13px;">${cat.name}</td>
+          <td><span style="background:${info.bg};color:${info.cor};padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500;">${info.ic} ${info.lb}</span></td>
+          <td style="font-size:12px;color:var(--text2);">${st==='concluido'?dataR:'—'}</td></tr>`;
+      });
+      html+=`</tbody></table></div></div>`;
+    });
+    return html;
+  }
   return `<div class="ph">
     <div><h2>Relatórios</h2><p>Acompanhamento por categoria e instrutor</p></div>
     <button class="btn btn-p" onclick="printRelatorio()">📄 Exportar PDF</button>
@@ -1685,13 +1789,16 @@ function renderRelatorios(){
     </select>
     <div style="display:flex;border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;">
       <button class="btn" style="border:none;border-radius:0;padding:7px 16px;${selType==='categoria'?'background:var(--text);color:#fff;':''}" data-action="relType" data-val="categoria">Por Categoria</button>
-      <button class="btn" style="border:none;border-radius:0;border-left:1px solid var(--border2);padding:7px 16px;${selType==='instrutor'?'background:var(--text);color:#fff;':''}" data-action="relType" data-val="instrutor">Por Instrutor</button>
+      <button class="btn" style="border:none;border-radius:0;border-left:1px solid var(--border2);padding:7px 16px;${selType==='horas'?'background:var(--text);color:#fff;':''}" data-action="relType" data-val="horas">⏱ Total de Horas</button>
+      <button class="btn" style="border:none;border-radius:0;border-left:1px solid var(--border2);padding:7px 16px;${selType==='cobertura'?'background:var(--text);color:#fff;':''}" data-action="relType" data-val="cobertura">📋 Cobertura</button>
     </div>
   </div>
 
   ${!selCid?'<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Selecione um cliente para gerar o relatório.</div>':
+    selType==='cobertura'?relCobertura():
+    selType==='horas'?relHoras():
     ss.length===0?'<div class="card" style="padding:32px;text-align:center;color:var(--text2);">Nenhum dia de treinamento cadastrado para este cliente.</div>':
-    selType==='categoria'?relCategoria():relInstrutor()
+    relCategoria()
   }`;
 }
 
@@ -4492,6 +4599,7 @@ function renderProspects(){
         </div>
         <div style="display:flex;gap:6px;">
           <button class="btn btn-sm btn-i" onclick="abrirModalNovoProspect('${selPid}')">✎ Editar</button>
+          <button class="btn btn-sm btn-d" onclick="excluirProspect('${selPid}')">× Excluir</button>
           <button class="btn btn-sm btn-p" onclick="enviarPesquisa('${selPid}')">📨 Enviar pesquisa</button>
         </div>
       </div>
@@ -4547,6 +4655,18 @@ window.salvarProspect=async function(editId=''){
   const data={nome,empresa:document.getElementById('pEmpresa')?.value.trim()||'',email:document.getElementById('pEmail')?.value.trim()||'',telefone:document.getElementById('pTel')?.value.trim()||'',obs:document.getElementById('pObs')?.value.trim()||''};
   const id=editId||gi(); if(!editId){data.criadoEm=new Date().toISOString();}
   await fbSet(`/prospects/${id}`,{id,...data}); if(!editId)S.prospPid=id; closeModal();
+};
+window.excluirProspect=async function(id){
+  const p=D.prospects?.[id];
+  const nome=p?.nome||'este prospect';
+  const respostas=Object.keys(D.respostas||{}).filter(k=>D.respostas[k].prospectId===id);
+  const aviso=respostas.length?`\n\n⚠️ Atenção: ${respostas.length} pesquisa(s) vinculada(s) também serão excluídas.`:'';
+  if(!confirm(`Excluir "${nome}"?${aviso}\n\nEsta ação não pode ser desfeita.`))return;
+  // Remove prospect e pesquisas vinculadas
+  const updates={[`/prospects/${id}`]:null};
+  respostas.forEach(rid=>{updates[`/respostas/${rid}`]=null;});
+  await fbUpdate('/',updates);
+  S.prospPid='';
 };
 window.abrirModalNovoQ=function(editId=''){
   const q=editId?D.questionarios?.[editId]:null;
