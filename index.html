@@ -784,26 +784,21 @@ function renderSidebar(){
   const isAdmin=p.role==='admin';
   const v=S.view;
 
-  // Grupos Master com seus subgrupos
+  // ── GRUPOS MASTER (sem Configurações — ela fica fixa embaixo) ──────────────
   const grupos=[
     {
       master:'IMPLANTAÇÃO',
       cor:'#4338CA',
       subs:[
-        {label:'Configurações', items:[
-          {id:'dashboard',ic:'⬛',l:'Dashboard'},
-          {id:'clientes',ic:'◈',l:'Clientes',admin:true},
-          {id:'catalogo',ic:'☷',l:'Catálogo',admin:true},
-          {id:'admin',ic:'⚙',l:'Usuários',admin:true},
-        ]},
         {label:'Planejamento', items:[
-          {id:'cronograma',ic:'📅',l:'Cronograma'},
-          {id:'horarios',ic:'◷',l:'Grade de horários'},
-          {id:'roteiro',ic:'⊞',l:'Roteiro de lojas',admin:true},
-          {id:'checklist',ic:'☑',l:'Checklist'},
+          {id:'cronograma',    ic:'📅', l:'Cronograma'},
+          {id:'horarios',      ic:'◷',  l:'Grade de horários'},
+          {id:'roteiro',       ic:'⊞',  l:'Roteiro de lojas', admin:true},
+          {id:'checklist',     ic:'☑',  l:'Checklist'},
         ]},
         {label:'Relatórios', items:[
-          {id:'relatorios',ic:'📊',l:'Relatórios',admin:true},
+          {id:'dashboard',     ic:'⬛', l:'Dashboard'},
+          {id:'relatorios',    ic:'📊', l:'Relatórios', admin:true},
         ]},
       ]
     },
@@ -812,7 +807,7 @@ function renderSidebar(){
       cor:'#0E7490',
       subs:[
         {label:'Gestão', items:[
-          {id:'prospects',ic:'◎',l:'Prospects',admin:true},
+          {id:'prospects', ic:'◎', l:'Prospects', admin:true},
         ]}
       ]
     },
@@ -821,84 +816,117 @@ function renderSidebar(){
       cor:'#7C3AED',
       subs:[
         {label:'Diário', items:[
-          {id:'demands',ic:'📋',l:'Demandas'},
-          {id:'avisos',ic:'📢',l:'Avisos'},
-          {id:'atualizacoes',ic:'🆕',l:'Atualizações'},
+          {id:'demands',      ic:'📋', l:'Demandas'},
+          {id:'avisos',       ic:'📢', l:'Avisos'},
+          {id:'atualizacoes', ic:'🆕', l:'Atualizações'},
         ]},
       ]
     }
   ];
 
-  // Para encontrar o grupo master ativo
-  const curMaster=grupos.find(g=>g.subs.some(s=>s.items.some(i=>i.id===v)))?.master||grupos[0].master;
-  const [expandedMaster,setExpandedMaster]=[S.navMaster||curMaster,null];
-  if(!S.navMaster)S.navMaster=curMaster;
+  // ── CONFIGURAÇÕES FIXAS NO RODAPÉ (compartilhada entre todos os grupos) ────
+  const configItems=[
+    {id:'clientes',  ic:'◈', l:'Clientes',  admin:true},
+    {id:'catalogo',  ic:'☷', l:'Catálogo',  admin:true},
+    {id:'admin',     ic:'⚙', l:'Usuários',  admin:true},
+  ].filter(i=>!i.admin||isAdmin);
 
-  // Título para mobile
+  // ── Determina qual grupo master está expandido ────────────────────────────
+  // Auto-expande o grupo que contém a view atual (ao carregar pela 1ª vez)
+  const grupoAtual=grupos.find(g=>g.subs.some(s=>s.items.some(i=>i.id===v)));
+  if(!S.navMaster && grupoAtual) S.navMaster=grupoAtual.master;
+
+  // ── Título na barra mobile ─────────────────────────────────────────────────
   let curItem=null;
   grupos.forEach(g=>g.subs.forEach(s=>s.items.forEach(i=>{if(i.id===v)curItem=i;})));
+  configItems.forEach(i=>{if(i.id===v)curItem=i;});
   const mobTitle=document.getElementById('mob-view-title');
   const mobUser=document.getElementById('mob-user');
   if(mobTitle)mobTitle.textContent=curItem?.l||'';
   if(mobUser)mobUser.textContent=(p.name||p.email).split(' ')[0];
 
-  // Monta HTML do sidebar
+  // ── Monta HTML dos grupos master ──────────────────────────────────────────
   let navHtml='';
   grupos.forEach(g=>{
-    const isExpanded=S.navMaster===g.master;
-    // Só mostra grupos que tenham itens visíveis
     const hasVisible=g.subs.some(s=>s.items.some(i=>!i.admin||isAdmin));
     if(!hasVisible)return;
 
+    // Toggle: se já está expandido e clica de novo → fecha (null)
+    const isExpanded=S.navMaster===g.master;
+    const toggleCmd=isExpanded?`setNavMaster(null)`:`setNavMaster('${g.master}')`;
+    const seta=isExpanded?'▾':'▸';
+
     navHtml+=`<div style="margin-bottom:2px;">
-      <!-- BOTÃO MASTER GROUP -->
-      <button onclick="setNavMaster('${g.master}')" style="
+      <button onclick="${toggleCmd}" style="
         width:100%;display:flex;align-items:center;gap:8px;
         padding:8px 10px;border-radius:8px;border:none;cursor:pointer;
-        font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
-        background:${isExpanded?g.cor+'22':'transparent'};
+        font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;
+        background:${isExpanded?g.cor+'1A':'transparent'};
         color:${isExpanded?g.cor:'var(--text2)'};
-        font-family:inherit;transition:all .15s;text-align:left;
+        font-family:inherit;transition:all .2s;text-align:left;
       ">
-        <span style="width:3px;height:12px;border-radius:2px;background:${isExpanded?g.cor:'var(--border)'};flex-shrink:0;transition:all .15s;"></span>
+        <span style="width:3px;height:14px;border-radius:2px;flex-shrink:0;transition:all .2s;
+          background:${isExpanded?g.cor:'var(--border)'};">
+        </span>
         <span style="flex:1;">${g.master}</span>
-        <span style="font-size:11px;transition:transform .2s;transform:rotate(${isExpanded?'0':'−90'}deg);">▾</span>
+        <span style="font-size:13px;transition:transform .25s;font-weight:400;">${seta}</span>
       </button>
-      <!-- SUBGRUPOS -->
-      ${isExpanded?g.subs.map(sub=>{
-        const visItems=sub.items.filter(i=>!i.admin||isAdmin);
-        if(!visItems.length)return'';
-        return`<div style="padding:0 0 4px 12px;">
-          <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;padding:6px 8px 3px;font-weight:600;">${sub.label}</div>
-          ${visItems.map(i=>`
-            <button class="nb${v===i.id?' act':''}" data-action="nav" data-view="${i.id}"
-              style="${v===i.id?'border-left:2px solid '+g.cor+';':''}"
-            ><span style="font-size:13px;">${i.ic}</span>${i.l}</button>
-          `).join('')}
-        </div>`;
-      }).join(''):''}
+      ${isExpanded?`<div style="margin-top:2px;">
+        ${g.subs.map(sub=>{
+          const vis=sub.items.filter(i=>!i.admin||isAdmin);
+          if(!vis.length)return'';
+          return`<div style="padding:2px 0 4px 14px;">
+            <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;
+              padding:6px 8px 3px;font-weight:600;">${sub.label}</div>
+            ${vis.map(i=>`<button class="nb${v===i.id?' act':''}" data-action="nav" data-view="${i.id}"
+              style="${v===i.id?'border-left:2px solid '+g.cor+';margin-left:-2px;':''}"
+            ><span style="font-size:13px;">${i.ic}</span>${i.l}</button>`).join('')}
+          </div>`;
+        }).join('')}
+      </div>`:''}
     </div>`;
   });
 
+  // ── HTML da seção Configurações no rodapé ─────────────────────────────────
+  const configHtml=configItems.length?`
+    <div style="border-top:1px solid var(--border);padding:8px 7px 4px;">
+      <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;
+        padding:4px 10px 6px;font-weight:600;">⚙ Configurações</div>
+      ${configItems.map(i=>`<button class="nb${v===i.id?' act':''}" data-action="nav" data-view="${i.id}"
+        ><span style="font-size:13px;">${i.ic}</span>${i.l}</button>`).join('')}
+    </div>`:'';
+
+  // ── Monta o sidebar completo ───────────────────────────────────────────────
   document.getElementById('sidebar').innerHTML=`
     <div style="padding:14px 16px;border-bottom:1px solid var(--border);">
       <div style="font-size:9px;letter-spacing:2.5px;color:var(--text2);text-transform:uppercase;margin-bottom:2px;">TrainControl</div>
       <div style="font-size:11px;color:var(--text3);">JSR Sistemas</div>
       <div style="font-size:9px;color:var(--text3);margin-top:2px;">v3.0 · Jun 2026</div>
     </div>
+
     <nav style="flex:1;padding:8px 7px;overflow-y:auto;">
       ${navHtml}
     </nav>
+
+    ${configHtml}
+
     <div style="padding:10px 12px;border-top:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
         ${av(p.name||p.email,30)}
-        <div><div style="font-size:12px;font-weight:500;">${(p.name||p.email).split(' ')[0]}</div>
-        <div style="font-size:10px;color:var(--text2);">${ROLES[p.role]?.l||p.role}</div></div>
+        <div>
+          <div style="font-size:12px;font-weight:500;">${(p.name||p.email).split(' ')[0]}</div>
+          <div style="font-size:10px;color:var(--text2);">${ROLES[p.role]?.l||p.role}</div>
+        </div>
       </div>
       <button class="btn btn-sm" style="width:100%;text-align:center;" data-action="logout">Sair</button>
     </div>`;
 }
-window.setNavMaster=function(master){S.navMaster=master;renderSidebar();};
+
+// Toggle: null fecha o grupo aberto; string abre o grupo
+window.setNavMaster=function(master){
+  S.navMaster=master; // null = todos fechados
+  renderSidebar();
+};
 
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────
