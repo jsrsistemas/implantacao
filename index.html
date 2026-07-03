@@ -731,7 +731,8 @@ onAuthStateChanged(auth, user => {
       // Verifica se ainda é o mesmo usuário logado (evita race condition)
       if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
       D = snap.val() || {};
-      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.checklistTemplates = D.checklistTemplates||{}; D.clientChecklists = D.clientChecklists||{}; D.roteiros = D.roteiros||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{};
+      D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.checklistTemplates = D.checklistTemplates||{}; D.clientChecklists = D.clientChecklists||{}; D.roteiros = D.roteiros||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{};
+      D.demands = D.demands||{}; D.avisos = D.avisos||{}; D.atualizacoes = D.atualizacoes||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{};
       currentProfile = D.users[user.uid];
       if (!currentProfile) {
         if (Object.keys(D.users).length === 0) {
@@ -780,38 +781,125 @@ onAuthStateChanged(auth, user => {
 // ── SIDEBAR ───────────────────────────────────────────────────────────────
 function renderSidebar(){
   const p=currentProfile;if(!p)return;
-  const nav=[
-    {id:'dashboard',ic:'⬛',l:'Dashboard'},
-    {id:'cronograma',ic:'☰',l:'Cronograma'},
-    {id:'horarios',ic:'◷',l:'Grade de horários'},
+  const isAdmin=p.role==='admin';
+  const v=S.view;
+
+  // Grupos Master com seus subgrupos
+  const grupos=[
+    {
+      master:'IMPLANTAÇÃO',
+      cor:'#4338CA',
+      subs:[
+        {label:'Configurações', items:[
+          {id:'dashboard',ic:'⬛',l:'Dashboard'},
+          {id:'clientes',ic:'◈',l:'Clientes',admin:true},
+          {id:'catalogo',ic:'☷',l:'Catálogo',admin:true},
+          {id:'admin',ic:'⚙',l:'Usuários',admin:true},
+        ]},
+        {label:'Planejamento', items:[
+          {id:'cronograma',ic:'📅',l:'Cronograma'},
+          {id:'horarios',ic:'◷',l:'Grade de horários'},
+          {id:'roteiro',ic:'⊞',l:'Roteiro de lojas',admin:true},
+          {id:'checklist',ic:'☑',l:'Checklist'},
+        ]},
+        {label:'Relatórios', items:[
+          {id:'relatorios',ic:'📊',l:'Relatórios',admin:true},
+        ]},
+      ]
+    },
+    {
+      master:'PROSPECTS',
+      cor:'#0E7490',
+      subs:[
+        {label:'Gestão', items:[
+          {id:'prospects',ic:'◎',l:'Prospects',admin:true},
+        ]}
+      ]
+    },
+    {
+      master:'INTERNO',
+      cor:'#7C3AED',
+      subs:[
+        {label:'Diário', items:[
+          {id:'demands',ic:'📋',l:'Demandas'},
+          {id:'avisos',ic:'📢',l:'Avisos'},
+          {id:'atualizacoes',ic:'🆕',l:'Atualizações'},
+        ]},
+      ]
+    }
   ];
-  if(p.role==='admin')nav.push({id:'catalogo',ic:'☷',l:'Catálogo'});
-  nav.push({id:'checklist',ic:'☑',l:'Checklist'});
-  if(p.role==='admin'){nav.push({id:'clientes',ic:'◈',l:'Clientes'},{id:'roteiro',ic:'⊞',l:'Roteiro de Lojas'},{id:'prospects',ic:'◎',l:'Prospects'},{id:'relatorios',ic:'📊',l:'Relatórios'},{id:'admin',ic:'⚙',l:'Usuários'});}
-  // Atualiza título na barra mobile
-  const cur=nav.find(n=>n.id===S.view);
+
+  // Para encontrar o grupo master ativo
+  const curMaster=grupos.find(g=>g.subs.some(s=>s.items.some(i=>i.id===v)))?.master||grupos[0].master;
+  const [expandedMaster,setExpandedMaster]=[S.navMaster||curMaster,null];
+  if(!S.navMaster)S.navMaster=curMaster;
+
+  // Título para mobile
+  let curItem=null;
+  grupos.forEach(g=>g.subs.forEach(s=>s.items.forEach(i=>{if(i.id===v)curItem=i;})));
   const mobTitle=document.getElementById('mob-view-title');
   const mobUser=document.getElementById('mob-user');
-  if(mobTitle)mobTitle.textContent=cur?.l||'';
+  if(mobTitle)mobTitle.textContent=curItem?.l||'';
   if(mobUser)mobUser.textContent=(p.name||p.email).split(' ')[0];
+
+  // Monta HTML do sidebar
+  let navHtml='';
+  grupos.forEach(g=>{
+    const isExpanded=S.navMaster===g.master;
+    // Só mostra grupos que tenham itens visíveis
+    const hasVisible=g.subs.some(s=>s.items.some(i=>!i.admin||isAdmin));
+    if(!hasVisible)return;
+
+    navHtml+=`<div style="margin-bottom:2px;">
+      <!-- BOTÃO MASTER GROUP -->
+      <button onclick="setNavMaster('${g.master}')" style="
+        width:100%;display:flex;align-items:center;gap:8px;
+        padding:8px 10px;border-radius:8px;border:none;cursor:pointer;
+        font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;
+        background:${isExpanded?g.cor+'22':'transparent'};
+        color:${isExpanded?g.cor:'var(--text2)'};
+        font-family:inherit;transition:all .15s;text-align:left;
+      ">
+        <span style="width:3px;height:12px;border-radius:2px;background:${isExpanded?g.cor:'var(--border)'};flex-shrink:0;transition:all .15s;"></span>
+        <span style="flex:1;">${g.master}</span>
+        <span style="font-size:11px;transition:transform .2s;transform:rotate(${isExpanded?'0':'−90'}deg);">▾</span>
+      </button>
+      <!-- SUBGRUPOS -->
+      ${isExpanded?g.subs.map(sub=>{
+        const visItems=sub.items.filter(i=>!i.admin||isAdmin);
+        if(!visItems.length)return'';
+        return`<div style="padding:0 0 4px 12px;">
+          <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;padding:6px 8px 3px;font-weight:600;">${sub.label}</div>
+          ${visItems.map(i=>`
+            <button class="nb${v===i.id?' act':''}" data-action="nav" data-view="${i.id}"
+              style="${v===i.id?'border-left:2px solid '+g.cor+';':''}"
+            ><span style="font-size:13px;">${i.ic}</span>${i.l}</button>
+          `).join('')}
+        </div>`;
+      }).join(''):''}
+    </div>`;
+  });
+
   document.getElementById('sidebar').innerHTML=`
-    <div style="padding:16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-      <div><div style="font-size:9px;letter-spacing:2.5px;color:var(--text2);text-transform:uppercase;margin-bottom:2px;">TrainControl</div><div style="font-size:11px;color:var(--text3);">JSR Sistemas</div><div style="font-size:9px;color:var(--text3);margin-top:2px;">v2.5 · Mai 2026</div></div>
-      <button onclick="closeSidebar()" style="background:transparent;border:none;font-size:18px;color:var(--text2);cursor:pointer;display:none;" id="sb-close-btn">✕</button>
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);">
+      <div style="font-size:9px;letter-spacing:2.5px;color:var(--text2);text-transform:uppercase;margin-bottom:2px;">TrainControl</div>
+      <div style="font-size:11px;color:var(--text3);">JSR Sistemas</div>
+      <div style="font-size:9px;color:var(--text3);margin-top:2px;">v3.0 · Jun 2026</div>
     </div>
-    <nav style="flex:1;padding:8px 7px;">
-      ${nav.map(n=>`<button class="nb${S.view===n.id?' act':''}" data-action="nav" data-view="${n.id}"><span style="font-size:14px;">${n.ic}</span>${n.l}</button>`).join('')}
+    <nav style="flex:1;padding:8px 7px;overflow-y:auto;">
+      ${navHtml}
     </nav>
     <div style="padding:10px 12px;border-top:1px solid var(--border);">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
         ${av(p.name||p.email,30)}
-        <div><div style="font-size:12px;font-weight:500;">${(p.name||p.email).split(' ')[0]}</div><div style="font-size:10px;color:var(--text2);">${ROLES[p.role]?.l||p.role}</div></div>
+        <div><div style="font-size:12px;font-weight:500;">${(p.name||p.email).split(' ')[0]}</div>
+        <div style="font-size:10px;color:var(--text2);">${ROLES[p.role]?.l||p.role}</div></div>
       </div>
       <button class="btn btn-sm" style="width:100%;text-align:center;" data-action="logout">Sair</button>
     </div>`;
-  // Mostra botão X dentro do sidebar no mobile
-  if(window.innerWidth<=700){const btn=document.getElementById('sb-close-btn');if(btn)btn.style.display='block';}
 }
+window.setNavMaster=function(master){S.navMaster=master;renderSidebar();};
+
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────
 function renderDashboard(){
@@ -3461,6 +3549,9 @@ function render(){
   else if(S.view==='admin')ct.innerHTML=renderAdmin();
   else if(S.view==='roteiro'){ct.innerHTML=renderRoteiro();setTimeout(initRoteiroMap,80);}
   else if(S.view==='prospects')ct.innerHTML=renderProspects();
+  else if(S.view==='demands')ct.innerHTML=renderDemands();
+  else if(S.view==='avisos')ct.innerHTML=renderAvisos();
+  else if(S.view==='atualizacoes')ct.innerHTML=renderAtualizacoes();
   else if(S.view==='checklist'){ct.innerHTML=renderChecklist();setTimeout(initChecklistDragDrop,50);}
   else if(S.view==='relatorios')ct.innerHTML=renderRelatorios();
 }
@@ -4889,6 +4980,58 @@ window.imprimirRespostas=function(rid){
   const w=window.open('','_blank'); if(w){w.document.write(html);w.document.close();}
 };
 window.excluirResposta=async function(rid){if(confirm('Remover?'))await fbRemove(`/respostas/${rid}`);};
+
+
+// ══ MÓDULO DEMANDAS (INTERNO) ═══════════════════════════════════════════════
+function renderDemands(){
+  const isAdmin=currentProfile?.role==='admin';
+  const demands=Object.values(D.demands||{}).sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
+  const selDid=S.selDid||'';
+  const dem=selDid?D.demands?.[selDid]:null;
+  const TIPO_COR={interna:'var(--blue-t)',privada:'var(--amber)',restrita:'var(--red)'};
+  const TIPO_L={interna:'Interna',privada:'Privada',restrita:'Restrita'};
+  const listHtml=demands.length?demands.map(d=>{const cor=TIPO_COR[d.tipo]||'var(--text2)';
+    return`<div onclick="setS('selDid','${d.id}')" style="padding:14px 16px;border-bottom:1px solid var(--border);cursor:pointer;background:${selDid===d.id?'var(--blue-bg)':'#fff'};border-left:3px solid ${selDid===d.id?'var(--blue)':'transparent'};transition:all .15s;"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px;"><div style="font-size:13px;font-weight:500;">${esc(d.titulo||'Sem título')}</div><span style="background:${cor}18;color:${cor};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap;">${TIPO_L[d.tipo]||d.tipo}</span></div><div style="font-size:11px;color:var(--text2);">${d.criadoEm?new Date(d.criadoEm).toLocaleDateString('pt-BR'):'—'}</div></div>`;
+  }).join(''):`<div style="padding:40px;text-align:center;color:var(--text2);font-size:13px;">Nenhuma demanda ainda</div>`;
+  return `<div class="ph"><div><h2>📋 Demandas</h2><p>Solicitações e tarefas internas</p></div>${isAdmin?`<button class="btn btn-p" onclick="abrirModalDemand()">+ Nova demanda</button>`:''}</div>
+  <div style="display:flex;height:calc(100vh - 120px);overflow:hidden;border:1px solid var(--border);border-radius:var(--r);background:#fff;">
+    <div style="width:280px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;font-weight:600;color:var(--text2);">${demands.length} demanda(s)</div>
+      <div style="flex:1;overflow-y:auto;">${listHtml}</div>
+    </div>
+    <div style="flex:1;overflow-y:auto;padding:24px;">${!dem?`<div style="padding:60px;text-align:center;color:var(--text2);"><div style="font-size:40px;margin-bottom:16px;">👆</div>Selecione uma demanda</div>`:
+    `<div style="max-width:640px;"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:8px;"><h2 style="font-size:18px;font-weight:600;">${esc(dem.titulo||'')}</h2>${isAdmin?`<div style="display:flex;gap:6px;"><button class="btn btn-sm btn-i" onclick="abrirModalDemand('${selDid}')">✎ Editar</button><button class="btn btn-sm btn-d" onclick="excluirDemand('${selDid}')">× Excluir</button></div>`:''}</div><div style="font-size:13px;line-height:1.8;color:var(--text);white-space:pre-wrap;background:var(--surface2);padding:16px;border-radius:var(--r);border:1px solid var(--border);">${esc(dem.descricao||'Sem descrição')}</div><div style="margin-top:12px;font-size:11px;color:var(--text3);">Criado em: ${dem.criadoEm?new Date(dem.criadoEm).toLocaleString('pt-BR'):'—'}</div></div>`}</div>
+  </div>`;
+}
+window.abrirModalDemand=function(editId=''){const d=editId?D.demands?.[editId]:null;const mb=document.getElementById('mb');mb.style.maxWidth='500px';mb.innerHTML=`<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><h3 style="font-size:15px;font-weight:500;">📋 ${editId?'Editar':'Nova'} Demanda</h3><button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button></div><div style="padding:20px;display:flex;flex-direction:column;gap:12px;"><div><label class="lbl">Título *</label><input class="inp" id="dTitulo" value="${esc(d?.titulo||'')}"></div><div><label class="lbl">Tipo</label><select class="inp" id="dTipo"><option value="interna"${(d?.tipo||'interna')==='interna'?' selected':''}>Interna (todos)</option><option value="privada"${d?.tipo==='privada'?' selected':''}>Privada (só eu)</option><option value="restrita"${d?.tipo==='restrita'?' selected':''}>Restrita (admins)</option></select></div><div><label class="lbl">Descrição</label><textarea class="inp" id="dDesc" rows="5">${esc(d?.descricao||'')}</textarea></div><div style="display:flex;gap:8px;justify-content:flex-end;"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-p" onclick="salvarDemand('${editId}')">Salvar</button></div></div>`;document.getElementById('ov').classList.add('open');};
+window.salvarDemand=async function(editId=''){const titulo=document.getElementById('dTitulo')?.value.trim();if(!titulo)return alert('Informe o título.');const id=editId||gi();await fbSet(`/demands/${id}`,{id,titulo,tipo:document.getElementById('dTipo')?.value||'interna',descricao:document.getElementById('dDesc')?.value.trim()||'',criadoEm:editId?(D.demands?.[editId]?.criadoEm||new Date().toISOString()):new Date().toISOString(),criadoPor:currentProfile?.email||''});if(!editId)S.selDid=id;closeModal();};
+window.excluirDemand=async function(id){if(confirm('Excluir esta demanda?')){await fbRemove(`/demands/${id}`);S.selDid='';}};
+
+// ══ MÓDULO AVISOS ══════════════════════════════════════════════════════════
+function renderAvisos(){
+  const isAdmin=currentProfile?.role==='admin';
+  const avisos=Object.values(D.avisos||{}).sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
+  const TIPO_COR={info:'var(--blue-t)',alerta:'var(--amber)',urgente:'var(--red)',sucesso:'var(--green-t)'};
+  const TIPO_IC={info:'ℹ️',alerta:'⚠️',urgente:'🚨',sucesso:'✅'};
+  return `<div class="ph"><div><h2>📢 Avisos Internos</h2><p>Comunicados da equipe</p></div>${isAdmin?`<button class="btn btn-p" onclick="abrirModalAviso()">+ Novo aviso</button>`:''}</div>
+  ${!avisos.length?`<div class="card" style="padding:48px;text-align:center;color:var(--text2);"><div style="font-size:40px;margin-bottom:12px;">📢</div>Nenhum aviso</div>`:''}
+  <div style="display:flex;flex-direction:column;gap:12px;">${avisos.map(a=>`<div class="card" style="border-left:4px solid ${TIPO_COR[a.tipo]||'var(--blue-t)'};"><div style="padding:14px 18px;"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px;"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">${TIPO_IC[a.tipo]||'📢'}</span><div><div style="font-size:14px;font-weight:600;">${esc(a.titulo||'')}</div><div style="font-size:11px;color:var(--text2);margin-top:2px;">${a.criadoEm?new Date(a.criadoEm).toLocaleDateString('pt-BR'):'—'}</div></div></div>${isAdmin?`<div style="display:flex;gap:5px;"><button class="btn btn-sm btn-i" onclick="abrirModalAviso('${a.id}')">✎</button><button class="btn btn-sm btn-d" onclick="excluirAviso('${a.id}')">×</button></div>`:''}</div><div style="font-size:13px;line-height:1.7;color:var(--text);white-space:pre-wrap;">${esc(a.mensagem||'')}</div></div></div>`).join('')}</div>`;
+}
+window.abrirModalAviso=function(editId=''){const a=editId?D.avisos?.[editId]:null;const mb=document.getElementById('mb');mb.style.maxWidth='500px';mb.innerHTML=`<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><h3 style="font-size:15px;font-weight:500;">📢 ${editId?'Editar':'Novo'} Aviso</h3><button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button></div><div style="padding:20px;display:flex;flex-direction:column;gap:12px;"><div><label class="lbl">Título *</label><input class="inp" id="aTitulo" value="${esc(a?.titulo||'')}"></div><div><label class="lbl">Tipo</label><select class="inp" id="aTipo"><option value="info"${(a?.tipo||'info')==='info'?' selected':''}>ℹ️ Informação</option><option value="alerta"${a?.tipo==='alerta'?' selected':''}>⚠️ Alerta</option><option value="urgente"${a?.tipo==='urgente'?' selected':''}>🚨 Urgente</option><option value="sucesso"${a?.tipo==='sucesso'?' selected':''}>✅ Sucesso</option></select></div><div><label class="lbl">Mensagem</label><textarea class="inp" id="aMensagem" rows="5">${esc(a?.mensagem||'')}</textarea></div><div style="display:flex;gap:8px;justify-content:flex-end;"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-p" onclick="salvarAviso('${editId}')">Publicar</button></div></div>`;document.getElementById('ov').classList.add('open');};
+window.salvarAviso=async function(editId=''){const titulo=document.getElementById('aTitulo')?.value.trim();if(!titulo)return alert('Informe o título.');const id=editId||gi();await fbSet(`/avisos/${id}`,{id,titulo,tipo:document.getElementById('aTipo')?.value||'info',mensagem:document.getElementById('aMensagem')?.value.trim()||'',criadoEm:editId?(D.avisos?.[editId]?.criadoEm||new Date().toISOString()):new Date().toISOString()});closeModal();};
+window.excluirAviso=async function(id){if(confirm('Excluir?'))await fbRemove(`/avisos/${id}`);};
+
+// ══ MÓDULO ATUALIZAÇÕES ════════════════════════════════════════════════════
+function renderAtualizacoes(){
+  const isAdmin=currentProfile?.role==='admin';
+  const ats=Object.values(D.atualizacoes||{}).sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''));
+  return `<div class="ph"><div><h2>🆕 Atualizações</h2><p>Novidades e melhorias do sistema</p></div>${isAdmin?`<button class="btn btn-p" onclick="abrirModalAt()">+ Nova atualização</button>`:''}</div>
+  ${!ats.length?`<div class="card" style="padding:48px;text-align:center;color:var(--text2);"><div style="font-size:40px;margin-bottom:12px;">🆕</div><div>Nenhuma atualização publicada</div></div>`:''}
+  <div style="display:flex;flex-direction:column;gap:14px;">${ats.map(a=>`<div class="card" style="overflow:hidden;"><div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><div style="display:flex;align-items:center;gap:8px;"><span style="background:var(--blue-bg);color:var(--blue-t);padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;">v${esc(a.versao||'?')}</span><div><div style="font-size:14px;font-weight:600;">${esc(a.titulo||'')}</div><div style="font-size:11px;color:var(--text2);">${a.criadoEm?new Date(a.criadoEm).toLocaleDateString('pt-BR'):'—'}</div></div></div>${isAdmin?`<div style="display:flex;gap:5px;"><button class="btn btn-sm btn-i" onclick="abrirModalAt('${a.id}')">✎</button><button class="btn btn-sm btn-d" onclick="excluirAt('${a.id}')">×</button></div>`:''}</div><div style="padding:14px 18px;font-size:13px;line-height:1.8;color:var(--text);white-space:pre-wrap;">${esc(a.descricao||'')}</div></div>`).join('')}</div>`;
+}
+window.abrirModalAt=function(editId=''){const a=editId?D.atualizacoes?.[editId]:null;const mb=document.getElementById('mb');mb.style.maxWidth='500px';mb.innerHTML=`<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;"><h3 style="font-size:15px;font-weight:500;">🆕 ${editId?'Editar':'Nova'} Atualização</h3><button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;">×</button></div><div style="padding:20px;display:flex;flex-direction:column;gap:12px;"><div style="display:flex;gap:10px;"><div style="width:100px;"><label class="lbl">Versão</label><input class="inp" id="atVersao" value="${esc(a?.versao||'')}" placeholder="3.1"></div><div style="flex:1;"><label class="lbl">Título *</label><input class="inp" id="atTitulo" value="${esc(a?.titulo||'')}"></div></div><div><label class="lbl">O que há de novo</label><textarea class="inp" id="atDesc" rows="6">${esc(a?.descricao||'')}</textarea></div><div style="display:flex;gap:8px;justify-content:flex-end;"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-p" onclick="salvarAt('${editId}')">Publicar</button></div></div>`;document.getElementById('ov').classList.add('open');};
+window.salvarAt=async function(editId=''){const titulo=document.getElementById('atTitulo')?.value.trim();if(!titulo)return alert('Informe o título.');const id=editId||gi();await fbSet(`/atualizacoes/${id}`,{id,titulo,versao:document.getElementById('atVersao')?.value.trim()||'',descricao:document.getElementById('atDesc')?.value.trim()||'',criadoEm:editId?(D.atualizacoes?.[editId]?.criadoEm||new Date().toISOString()):new Date().toISOString()});closeModal();};
+window.excluirAt=async function(id){if(confirm('Excluir?'))await fbRemove(`/atualizacoes/${id}`);};
 
 window.setS=(key,val)=>{S[key]=val;render();};
 
