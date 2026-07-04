@@ -732,7 +732,7 @@ onAuthStateChanged(auth, user => {
       if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
       D = snap.val() || {};
       D.users = D.users||{}; D.clients = D.clients||{}; D.sessions = D.sessions||{}; D.catalog = D.catalog||{}; D.confirmations = D.confirmations||{}; D.repconfirmations = D.repconfirmations||{}; D.checklistTemplate = D.checklistTemplate||{}; D.checklistTemplates = D.checklistTemplates||{}; D.clientChecklists = D.clientChecklists||{}; D.roteiros = D.roteiros||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{};
-      D.demands = D.demands||{}; D.avisos = D.avisos||{}; D.atualizacoes = D.atualizacoes||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{};
+      D.demands = D.demands||{}; D.avisos = D.avisos||{}; D.atualizacoes = D.atualizacoes||{}; D.trainings = D.trainings||{}; D.prospects = D.prospects||{}; D.questionarios = D.questionarios||{}; D.respostas = D.respostas||{};
       currentProfile = D.users[user.uid];
       if (!currentProfile) {
         if (Object.keys(D.users).length === 0) {
@@ -817,6 +817,7 @@ function renderSidebar(){
       subs:[
         {label:'Diário', items:[
           {id:'demands',      ic:'📋', l:'Demandas'},
+          {id:'trainings',    ic:'🎓', l:'Treinamentos'},
           {id:'avisos',       ic:'📢', l:'Avisos'},
           {id:'atualizacoes', ic:'🆕', l:'Atualizações'},
         ]},
@@ -3578,6 +3579,7 @@ function render(){
   else if(S.view==='roteiro'){ct.innerHTML=renderRoteiro();setTimeout(initRoteiroMap,80);}
   else if(S.view==='prospects')ct.innerHTML=renderProspects();
   else if(S.view==='demands')ct.innerHTML=renderDemands();
+  else if(S.view==='trainings')ct.innerHTML=renderTrainings();
   else if(S.view==='avisos')ct.innerHTML=renderAvisos();
   else if(S.view==='atualizacoes')ct.innerHTML=renderAtualizacoes();
   else if(S.view==='checklist'){ct.innerHTML=renderChecklist();setTimeout(initChecklistDragDrop,50);}
@@ -5009,6 +5011,223 @@ window.imprimirRespostas=function(rid){
 };
 window.excluirResposta=async function(rid){if(confirm('Remover?'))await fbRemove(`/respostas/${rid}`);};
 
+
+// ══ MÓDULO TREINAMENTOS (INTERNO) ══════════════════════════════════════════
+// Funciona como uma biblioteca interna: cada treinamento tem título,
+// categoria, conteúdo detalhado e nível de acesso.
+function renderTrainings(){
+  const isAdmin=currentProfile?.role==='admin';
+  const selTid=S.selTid||'';
+  const selCateg=S.trainCateg||'';
+  const busca=(S.trainBusca||'').toLowerCase().trim();
+
+  const trainings=Object.values(D.trainings||{}).sort((a,b)=>(a.titulo||'').localeCompare(b.titulo||''));
+
+  // Categorias únicas extraídas dos treinamentos existentes
+  const categorias=[...new Set(trainings.map(t=>t.categoria).filter(Boolean))].sort();
+
+  // Filtra por categoria e busca textual
+  const filtrados=trainings.filter(t=>{
+    const matchCateg=!selCateg||t.categoria===selCateg;
+    const matchBusca=!busca||
+      (t.titulo||'').toLowerCase().includes(busca)||
+      (t.descricao||'').toLowerCase().includes(busca)||
+      (t.categoria||'').toLowerCase().includes(busca);
+    return matchCateg&&matchBusca;
+  });
+
+  const treinamento=selTid?D.trainings?.[selTid]:null;
+
+  // ── Lista lateral ──────────────────────────────────────────────────────
+  const NIVEL_COR={basico:'var(--green-t)',intermediario:'var(--amber)',avancado:'var(--red)'};
+  const NIVEL_L={basico:'Básico',intermediario:'Intermediário',avancado:'Avançado'};
+
+  const listaHtml=filtrados.length
+    ?filtrados.map(t=>{
+      const cor=NIVEL_COR[t.nivel]||'var(--text3)';
+      const ativo=selTid===t.id;
+      return`<div onclick="setS('selTid','${t.id}')" style="
+        padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer;
+        background:${ativo?'var(--blue-bg)':'#fff'};
+        border-left:3px solid ${ativo?'var(--blue)':'transparent'};
+        transition:all .15s;">
+        ${t.categoria?`<div style="font-size:9px;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);font-weight:600;margin-bottom:3px;">${t.categoria}</div>`:''}
+        <div style="font-size:13px;font-weight:500;line-height:1.4;margin-bottom:4px;">${esc(t.titulo||'Sem título')}</div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          ${t.nivel?`<span style="font-size:9px;font-weight:600;color:${cor};background:${cor}18;padding:1px 7px;border-radius:10px;">${NIVEL_L[t.nivel]||t.nivel}</span>`:''}
+          <span style="font-size:10px;color:var(--text3);">${t.criadoEm?new Date(t.criadoEm).toLocaleDateString('pt-BR'):'—'}</span>
+        </div>
+      </div>`;
+    }).join('')
+    :`<div style="padding:40px 20px;text-align:center;color:var(--text2);">
+        <div style="font-size:32px;margin-bottom:10px;">🎓</div>
+        <div style="font-size:13px;">${busca||selCateg?'Nenhum resultado encontrado':'Nenhum treinamento ainda'}</div>
+        ${isAdmin?`<button class="btn btn-sm btn-p" style="margin-top:12px;" onclick="abrirModalTraining()">+ Criar primeiro</button>`:''}
+      </div>`;
+
+  // ── Detalhe do treinamento selecionado ─────────────────────────────────
+  const detalheHtml=!treinamento
+    ?`<div style="padding:60px 40px;text-align:center;color:var(--text2);">
+        <div style="font-size:48px;margin-bottom:14px;">🎓</div>
+        <div style="font-size:15px;font-weight:500;margin-bottom:6px;">Biblioteca de Treinamentos</div>
+        <div style="font-size:13px;color:var(--text3);">Selecione um treinamento na lista ao lado<br>ou crie um novo clicando no botão acima.</div>
+      </div>`
+    :`<div style="max-width:780px;">
+        <!-- Cabeçalho do treinamento -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:12px;flex-wrap:wrap;">
+          <div style="flex:1;">
+            ${treinamento.categoria?`<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--text3);font-weight:700;margin-bottom:6px;">📂 ${treinamento.categoria}</div>`:''}
+            <h2 style="font-size:20px;font-weight:600;line-height:1.3;margin-bottom:8px;">${esc(treinamento.titulo||'')}</h2>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              ${treinamento.nivel?`<span style="font-size:11px;font-weight:600;color:${NIVEL_COR[treinamento.nivel]||'var(--text3)'};background:${NIVEL_COR[treinamento.nivel]||'var(--text3)'}18;padding:3px 10px;border-radius:20px;">${NIVEL_L[treinamento.nivel]||treinamento.nivel}</span>`:''}
+              ${treinamento.duracao?`<span style="font-size:11px;color:var(--text2);">⏱ ${treinamento.duracao}</span>`:''}
+              <span style="font-size:11px;color:var(--text3);">Por ${treinamento.criadoPor||'—'} · ${treinamento.criadoEm?new Date(treinamento.criadoEm).toLocaleDateString('pt-BR'):'—'}</span>
+            </div>
+          </div>
+          ${isAdmin?`<div style="display:flex;gap:6px;flex-shrink:0;">
+            <button class="btn btn-sm btn-i" onclick="abrirModalTraining('${selTid}')">✎ Editar</button>
+            <button class="btn btn-sm btn-d" onclick="excluirTraining('${selTid}')">× Excluir</button>
+          </div>`:''}
+        </div>
+        <!-- Descrição curta -->
+        ${treinamento.descricao?`<div style="background:var(--blue-bg);border-left:3px solid var(--blue);padding:12px 16px;border-radius:0 var(--r) var(--r) 0;font-size:13px;color:var(--blue-t);margin-bottom:20px;line-height:1.6;">${esc(treinamento.descricao)}</div>`:''}
+        <!-- Conteúdo principal -->
+        ${treinamento.conteudo?`<div style="font-size:13px;line-height:1.9;color:var(--text);white-space:pre-wrap;background:var(--surface2);padding:20px;border-radius:var(--r);border:1px solid var(--border);">${esc(treinamento.conteudo)}</div>`:''}
+        <!-- Observações -->
+        ${treinamento.obs?`<div style="margin-top:16px;padding:12px 16px;background:var(--amber-bg);border-radius:var(--r);font-size:12px;color:var(--amber);"><strong>⚠️ Observações:</strong> ${esc(treinamento.obs)}</div>`:''}
+      </div>`;
+
+  return `<div class="ph">
+    <div><h2>🎓 Treinamentos</h2><p>Biblioteca interna de materiais e conteúdos de treinamento</p></div>
+    ${isAdmin?`<button class="btn btn-p" onclick="abrirModalTraining()">+ Novo treinamento</button>`:''}
+  </div>
+
+  <!-- Filtros de busca e categoria -->
+  <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;">
+    <input class="inp" placeholder="🔍 Buscar treinamento..." value="${esc(S.trainBusca||'')}"
+      oninput="S.trainBusca=this.value;render()"
+      style="width:220px;font-size:12px;">
+    <select class="inp" onchange="setS('trainCateg',this.value)" style="width:auto;font-size:12px;">
+      <option value="">Todas as categorias</option>
+      ${categorias.map(c=>`<option value="${esc(c)}"${selCateg===c?' selected':''}>${c}</option>`).join('')}
+    </select>
+    ${(busca||selCateg)?`<button class="btn btn-sm" onclick="S.trainBusca='';setS('trainCateg','')">✕ Limpar filtros</button>`:''}
+    <span style="font-size:12px;color:var(--text2);margin-left:4px;">${filtrados.length} treinamento(s)</span>
+  </div>
+
+  <!-- Layout: lista lateral + detalhe -->
+  <div style="display:flex;height:calc(100vh - 170px);overflow:hidden;border:1px solid var(--border);border-radius:var(--r);background:#fff;">
+    <!-- Lista -->
+    <div style="width:290px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;">
+      <div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text3);">
+        ${filtrados.length} de ${trainings.length} treinamento(s)
+      </div>
+      <div style="flex:1;overflow-y:auto;">${listaHtml}</div>
+    </div>
+    <!-- Detalhe -->
+    <div style="flex:1;overflow-y:auto;padding:24px 28px;">
+      ${detalheHtml}
+    </div>
+  </div>`;
+}
+
+// ── Modal criar/editar treinamento ─────────────────────────────────────────
+window.abrirModalTraining=function(editId=''){
+  const t=editId?D.trainings?.[editId]:null;
+  const mb=document.getElementById('mb');
+  mb.style.maxWidth='580px';
+  mb.innerHTML=`
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <h3 style="font-size:15px;font-weight:500;">🎓 ${editId?'Editar':'Novo'} Treinamento</h3>
+      <button onclick="closeModal()" style="background:transparent;border:none;font-size:22px;cursor:pointer;color:var(--text2);">×</button>
+    </div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:12px;max-height:75vh;overflow-y:auto;">
+      <!-- Linha 1: Título -->
+      <div>
+        <label class="lbl">Título *</label>
+        <input class="inp" id="tTitulo" value="${esc(t?.titulo||'')}" placeholder="Ex: Como usar o módulo de Checklist">
+      </div>
+      <!-- Linha 2: Categoria + Nível -->
+      <div style="display:flex;gap:10px;">
+        <div style="flex:2;">
+          <label class="lbl">Categoria</label>
+          <input class="inp" id="tCategoria" value="${esc(t?.categoria||'')}"
+            placeholder="Ex: Sistema, Fiscal, Atendimento..."
+            list="categorias-existentes">
+          <datalist id="categorias-existentes">
+            ${[...new Set(Object.values(D.trainings||{}).map(x=>x.categoria).filter(Boolean))].map(c=>`<option value="${esc(c)}">`).join('')}
+          </datalist>
+        </div>
+        <div style="flex:1;">
+          <label class="lbl">Nível</label>
+          <select class="inp" id="tNivel">
+            <option value=""${!t?.nivel?' selected':''}>— Nível —</option>
+            <option value="basico"${t?.nivel==='basico'?' selected':''}>🟢 Básico</option>
+            <option value="intermediario"${t?.nivel==='intermediario'?' selected':''}>🟡 Intermediário</option>
+            <option value="avancado"${t?.nivel==='avancado'?' selected':''}>🔴 Avançado</option>
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label class="lbl">Duração</label>
+          <input class="inp" id="tDuracao" value="${esc(t?.duracao||'')}" placeholder="Ex: 2h, 45min">
+        </div>
+      </div>
+      <!-- Linha 3: Descrição curta (resumo) -->
+      <div>
+        <label class="lbl">Descrição curta <span style="color:var(--text3);font-weight:400;">(aparece destacada no topo)</span></label>
+        <textarea class="inp" id="tDescricao" rows="2" placeholder="Objetivo e o que o colaborador vai aprender...">${esc(t?.descricao||'')}</textarea>
+      </div>
+      <!-- Linha 4: Conteúdo principal -->
+      <div>
+        <label class="lbl">Conteúdo do treinamento <span style="color:var(--text3);font-weight:400;">(passo a passo, explicações, exemplos)</span></label>
+        <textarea class="inp" id="tConteudo" rows="10"
+          placeholder="PASSO 1 — Faça isso...&#10;PASSO 2 — Depois faça...&#10;&#10;DICA: Use linhas em branco para separar seções."
+          style="font-family:monospace;font-size:12px;line-height:1.7;">${esc(t?.conteudo||'')}</textarea>
+      </div>
+      <!-- Linha 5: Observações -->
+      <div>
+        <label class="lbl">⚠️ Observações / Alertas <span style="color:var(--text3);font-weight:400;">(opcional)</span></label>
+        <textarea class="inp" id="tObs" rows="2" placeholder="Ex: Atenção — este processo só funciona após a configuração X estar concluída.">${esc(t?.obs||'')}</textarea>
+      </div>
+      <!-- Botões -->
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:4px;">
+        <button class="btn" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-p" onclick="salvarTraining('${editId}')">💾 Salvar treinamento</button>
+      </div>
+    </div>`;
+  document.getElementById('ov').classList.add('open');
+};
+
+// ── Salvar treinamento no Firebase ──────────────────────────────────────────
+window.salvarTraining=async function(editId=''){
+  const titulo=document.getElementById('tTitulo')?.value.trim();
+  if(!titulo)return alert('O título é obrigatório.');
+  const id=editId||gi();
+  const dados={
+    id,
+    titulo,
+    categoria: document.getElementById('tCategoria')?.value.trim()||'',
+    nivel:     document.getElementById('tNivel')?.value||'',
+    duracao:   document.getElementById('tDuracao')?.value.trim()||'',
+    descricao: document.getElementById('tDescricao')?.value.trim()||'',
+    conteudo:  document.getElementById('tConteudo')?.value.trim()||'',
+    obs:       document.getElementById('tObs')?.value.trim()||'',
+    criadoEm:  editId?(D.trainings?.[editId]?.criadoEm||new Date().toISOString()):new Date().toISOString(),
+    atualizadoEm: new Date().toISOString(),
+    criadoPor: currentProfile?.name||currentProfile?.email||'—',
+  };
+  await fbSet(`/trainings/${id}`, dados);
+  if(!editId) S.selTid=id;
+  closeModal();
+};
+
+// ── Excluir treinamento ─────────────────────────────────────────────────────
+window.excluirTraining=async function(id){
+  const t=D.trainings?.[id];
+  if(!confirm(`Excluir o treinamento "${t?.titulo||'este treinamento'}"?\n\nEsta ação não pode ser desfeita.`))return;
+  await fbRemove(`/trainings/${id}`);
+  S.selTid='';
+};
 
 // ══ MÓDULO DEMANDAS (INTERNO) ═══════════════════════════════════════════════
 function renderDemands(){
